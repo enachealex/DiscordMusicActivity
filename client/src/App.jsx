@@ -644,25 +644,12 @@ export default function App() {
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
           onAdd={addTrack}
-          onSpotifyLogin={() => {
+          onSpotifyLogin={(() => {
             const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
             const clientOrigin = window.location.origin;
             const socketId = socketRef.current?.id || '';
-            const loginUrl = `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
-            
-            try {
-              if (discordSdk && window.parent !== window) {
-                // Tell Discord to open the link natively in the user's browser
-                discordSdk.commands.openExternalLink({ url: loginUrl }).catch(() => {
-                  window.open(loginUrl, '_blank', 'noreferrer');
-                });
-              } else {
-                window.open(loginUrl, '_blank', 'noreferrer');
-              }
-            } catch (err) {
-              window.open(loginUrl, '_blank', 'noreferrer');
-            }
-          }}
+            return `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+          })()}
           onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
             setSpotifyToken(null);
