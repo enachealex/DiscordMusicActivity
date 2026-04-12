@@ -54,7 +54,7 @@ export default function App() {
     const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
     const clientOrigin = window.location.origin;
     const effectiveSocketId = socketId || socketRef.current?.id || '';
-    return `/api/spotify/login?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(effectiveSocketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+    return `${serverOrigin}/spotify/login?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(effectiveSocketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
   }, [ready, user, socketId]);
 
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
