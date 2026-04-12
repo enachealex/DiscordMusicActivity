@@ -722,3 +722,58 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* =======================================================
+   Mobile Layout (Discord Phone App)
+   ======================================================= */
+@media (max-width: 600px) {
+  #root {
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .app {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .app-left {
+    width: 100%;
+    height: auto;
+    flex-shrink: 0;
+    border-right: none;
+    border-bottom: 2px solid var(--surface2);
+  }
+
+  .app-left-fill {
+    display: none;
+  }
+
+  .app-right {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Adjust player sizing for phones */
+  .yt-container iframe {
+    height: 250px !important;
+  }
+  
+  .yt-container, .spotify-container {
+    height: 250px;
+    min-height: 250px;
+  }
+
+  .search-results {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  
+  .queue-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+}
