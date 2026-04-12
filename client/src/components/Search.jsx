@@ -14,7 +14,39 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
   const queuedIds = useMemo(() => new Set((queue || []).map((track) => track.id)), [queue]);
+
+  async function handleCopyLoginUrl() {
+    if (!onSpotifyLogin) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(onSpotifyLogin);
+        setCopyStatus('Copied');
+        return;
+      }
+    } catch {
+      // Fall back to legacy copy path below when clipboard permissions are blocked.
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = onSpotifyLogin;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      textarea.style.pointerEvents = 'none';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopyStatus(ok ? 'Copied' : 'Copy blocked; select the link and press Ctrl+C');
+    } catch {
+      setCopyStatus('Copy blocked; select the link and press Ctrl+C');
+    }
+  }
 
   // Show Spotify connect prompt when service is Spotify but not authenticated
   if (service === 'spotify' && !spotifyToken) {
@@ -67,11 +99,14 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                   borderRadius: '4px', background: 'white', color: 'black', 
                   border: 'none', fontWeight: 'bold' 
                 }}
-                onClick={() => navigator.clipboard.writeText(onSpotifyLogin)}
+                onClick={handleCopyLoginUrl}
               >
                 Copy
               </button>
             </div>
+            {copyStatus ? (
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-sub)' }}>{copyStatus}</p>
+            ) : null}
           </div>
         ) : (
           <button className="btn-spotify" disabled>
