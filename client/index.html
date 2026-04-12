@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discord Music Activity</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body style="margin:0;background:#1e1f22;color:#949ba4;font-family:sans-serif;">
+    <!-- Inline dark loading state so something is always visible even if the
+         external CSS bundle fails to load (e.g. during Discord Activity init). -->
+    <div id="root" style="display:flex;align-items:center;justify-content:center;height:100vh;">
+      <div style="text-align:center">
+        <div style="width:32px;height:32px;border:3px solid #3f4147;border-top-color:#5865f2;border-radius:50%;animation:_s 0.8s linear infinite;margin:0 auto 12px;"></div>
+        <p style="margin:0;font-size:13px">Connecting&hellip;</p>
+      </div>
+    </div>
+    <style>@keyframes _s{to{transform:rotate(360deg)}}</style>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
