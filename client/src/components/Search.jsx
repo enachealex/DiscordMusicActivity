@@ -36,19 +36,46 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           <br />
           <strong>Spotify Premium is required for playback.</strong>
         </p>
-        {typeof onSpotifyLogin === 'string' ? (
-          <a
-            href={onSpotifyLogin}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-spotify"
-            style={{ display: 'inline-block', textAlign: 'center', textDecoration: 'none' }}
-          >
-            Connect Spotify
-          </a>
+        {typeof onSpotifyLogin === 'string' && onSpotifyLogin ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+            <a
+              href={onSpotifyLogin}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-spotify"
+              style={{ display: 'inline-block', textAlign: 'center', textDecoration: 'none' }}
+            >
+              Click Here to Sign In
+            </a>
+            <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--text-sub)', textAlign: 'center' }}>
+              Or copy this link and paste it into your device's web browser:
+            </p>
+            <div style={{ display: 'flex', gap: '6px', width: '100%', maxWidth: '400px' }}>
+              <input
+                readOnly
+                value={onSpotifyLogin}
+                style={{ 
+                  flex: 1, padding: '4px 6px', fontSize: '10px', borderRadius: '4px', 
+                  border: '1px solid var(--border)', background: 'rgba(0, 0, 0, 0.5)', 
+                  color: 'white', outline: 'none' 
+                }}
+                onClick={(e) => e.target.select()}
+              />
+              <button
+                style={{ 
+                  padding: '4px 12px', fontSize: '11px', cursor: 'pointer', 
+                  borderRadius: '4px', background: 'white', color: 'black', 
+                  border: 'none', fontWeight: 'bold' 
+                }}
+                onClick={() => navigator.clipboard.writeText(onSpotifyLogin)}
+              >
+                Copy
+              </button>
+            </div>
+          </div>
         ) : (
-          <button className="btn-spotify" onClick={onSpotifyLogin}>
-            Connect Spotify
+          <button className="btn-spotify" disabled>
+            Loading...
           </button>
         )}
         <p className="spotify-note">Spotify Premium required for in-app playback.</p>

@@ -26,6 +26,7 @@ export default function App() {
   const [detachedService, setDetachedService] = useState(null);
   const [detachedRoom, setDetachedRoom] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
+    const [spotifyLoginUrl, setSpotifyLoginUrl] = useState('');
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyRestoring, setSpotifyRestoring] = useState(
     () => !!localStorage.getItem('spotify_refresh_token')
@@ -48,6 +49,20 @@ export default function App() {
   const [claimRequest, setClaimRequest] = useState(null); // { claimerId, claimerUsername, countdown }
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const socketRef = useRef(null);
+  useEffect(() => {
+    if (ready && user && socketRef.current?.id) {
+      const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
+      const clientOrigin = window.location.origin;
+      const socketId = socketRef.current.id;
+      const fetchUrl = `${serverOrigin}/api/spotify/login-url?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+      
+      fetch(fetchUrl)
+        .then((res) => res.json())
+        .then((data) => setSpotifyLoginUrl(data.url))
+        .catch((err) => console.error('Failed to prefetch Spotify URL:', err));
+    }
+  }, [ready, user]);
+
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
 
   function cloneRoomState(baseRoom) {
@@ -644,23 +659,7 @@ export default function App() {
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
           onAdd={addTrack}
-                    onSpotifyLogin={async () => {
-            const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
-            const clientOrigin = window.location.origin;
-            const socketId = socketRef.current?.id || "";
-            try {
-              const fetchUrl = `${serverOrigin}/api/spotify/login-url?userId=${encodeURIComponent(user?.id || "")}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
-              const res = await fetch(fetchUrl);
-              const data = await res.json();
-              if (discordSdk) {
-                await discordSdk.commands.openExternalLink({ url: data.url });
-              } else {
-                window.open(data.url, "_blank");
-              }
-            } catch (err) {
-              console.error("Failed to launch Spotify login:", err);
-            }
-          }}
+                    onSpotifyLogin={spotifyLoginUrl}
 
             onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
