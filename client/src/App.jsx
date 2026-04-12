@@ -605,6 +605,7 @@ export default function App() {
           isDJ={isDJ}
           detached={detached}
           volume={volume}
+          expanded={!showDebug}
           onPlayToggle={handlePlayToggle}
           onSkip={skip}
           onSeek={handleSeek}

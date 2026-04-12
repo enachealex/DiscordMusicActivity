@@ -12,6 +12,7 @@ export default function PlayerControls({
   isDJ,
   detached,
   volume,
+  expanded,
   onPlayToggle,
   onSkip,
   onSeek,
@@ -39,7 +40,7 @@ export default function PlayerControls({
   }
 
   return (
-    <div className="player-bar">
+    <div className={`player-bar${expanded ? ' expanded' : ''}`}>
       <div
         className={`progress-track${canControl && currentTrack ? ' seekable' : ''}`}
         onClick={handleProgressClick}

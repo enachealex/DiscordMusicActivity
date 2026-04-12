@@ -406,6 +406,41 @@ body {
 .time-label { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: center; }
 .sync-pill { text-align: center; font-size: 11px; color: var(--text-muted); padding-bottom: 2px; }
 
+/* Expanded Player Bar (when debug is hidden) */
+.player-bar.expanded .controls-row {
+  padding: 16px 20px 10px;
+  gap: 12px;
+}
+.player-bar.expanded .time-label {
+  font-size: 14px;
+  min-width: 44px;
+}
+.player-bar.expanded .ctrl-btn {
+  font-size: 24px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.player-bar.expanded .ctrl-btn.ctrl-btn--sm {
+  font-size: 14px;
+  padding: 6px 10px;
+}
+.player-bar.expanded .vol-icon, 
+.player-bar.expanded .vol-icon-btn {
+  font-size: 18px;
+}
+.player-bar.expanded .vol-slider {
+  width: 90px;
+  height: 5px;
+}
+.player-bar.expanded .vol-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+}
+.player-bar.expanded .vol-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+}
+
 .debug-toggle-btn {
   display: block;
   width: 100%;
