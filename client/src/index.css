@@ -406,11 +406,30 @@ body {
 .time-label { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: center; }
 .sync-pill { text-align: center; font-size: 11px; color: var(--text-muted); padding-bottom: 2px; }
 
+.debug-toggle-btn {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  background: var(--surface2);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  text-align: center;
+}
+
+.debug-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-normal);
+}
+
 .debug-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 6px 8px 2px;
+  padding: 6px 8px 6px;
   border-top: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.12);
 }

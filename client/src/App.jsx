@@ -25,6 +25,7 @@ export default function App() {
   const [detached, setDetached] = useState(false);
   const [detachedService, setDetachedService] = useState(null);
   const [detachedRoom, setDetachedRoom] = useState(null);
+  const [showDebug, setShowDebug] = useState(false);
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyRestoring, setSpotifyRestoring] = useState(
     () => !!localStorage.getItem('spotify_refresh_token')
@@ -610,19 +611,28 @@ export default function App() {
           onVolumeChange={handleVolumeChange}
           currentTrack={currentTrack}
         />
-        {/* Debug strip hidden from users — uncomment to re-enable:
-        <div className="debug-strip" role="status" aria-live="polite">
-          <span className="debug-chip">svc: {activeService}</span>
-          <span className="debug-chip">room: {room.isPlaying ? 'playing' : 'paused'}</span>
-          <span className="debug-chip">local: {localPlaying ? 'playing' : 'paused'}</span>
-          <span className="debug-chip">player: {debugInfo.playerState || '-'}</span>
-          <span className="debug-chip">blocked: {debugInfo.autoplayBlocked ? 'yes' : 'no'}</span>
-          <span className="debug-chip">sdk: {debugInfo.spotifySdkReady ? 'ready' : 'idle'}</span>
-          <span className="debug-chip">dev: {debugInfo.spotifyDeviceId || '-'}</span>
-          <span className="debug-chip">playAPI: {debugInfo.spotifyLastPlayStatus || '-'}</span>
-          <span className="debug-chip">evt: {debugInfo.lastEvent || '-'}</span>
-        </div>
-        */}
+        
+        <button 
+          className="debug-toggle-btn" 
+          onClick={() => setShowDebug(!showDebug)}
+          aria-expanded={showDebug}
+        >
+          {showDebug ? '▲ Hide Debugging ▲' : '▼ Show Debugging ▼'}
+        </button>
+
+        {showDebug && (
+          <div className="debug-strip" role="status" aria-live="polite">
+            <span className="debug-chip">svc: {activeService}</span>
+            <span className="debug-chip">room: {room.isPlaying ? 'playing' : 'paused'}</span>
+            <span className="debug-chip">local: {localPlaying ? 'playing' : 'paused'}</span>
+            <span className="debug-chip">player: {debugInfo.playerState || '-'}</span>
+            <span className="debug-chip">blocked: {debugInfo.autoplayBlocked ? 'yes' : 'no'}</span>
+            <span className="debug-chip">sdk: {debugInfo.spotifySdkReady ? 'ready' : 'idle'}</span>
+            <span className="debug-chip">dev: {debugInfo.spotifyDeviceId || '-'}</span>
+            <span className="debug-chip">playAPI: {debugInfo.spotifyLastPlayStatus || '-'}</span>
+            <span className="debug-chip">evt: {debugInfo.lastEvent || '-'}</span>
+          </div>
+        )}
       </div>
 
       {/* Right column: search + queue */}
