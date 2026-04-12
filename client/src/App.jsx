@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { DiscordSDK, patchUrlMappings } from '@discord/embedded-app-sdk';
 import { io } from 'socket.io-client';
 import ServiceSelector from './components/ServiceSelector.jsx';
@@ -26,7 +26,6 @@ export default function App() {
   const [detachedService, setDetachedService] = useState(null);
   const [detachedRoom, setDetachedRoom] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
-    const [spotifyLoginUrl, setSpotifyLoginUrl] = useState('');
   const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyRestoring, setSpotifyRestoring] = useState(
@@ -50,17 +49,12 @@ export default function App() {
   const [claimRequest, setClaimRequest] = useState(null); // { claimerId, claimerUsername, countdown }
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const socketRef = useRef(null);
-  useEffect(() => {
-    if (ready && user && socketId) {
-      const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
-      const clientOrigin = window.location.origin;
-      const fetchUrl = `/api/spotify/login-url?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
-      
-      fetch(fetchUrl)
-        .then((res) => res.json())
-        .then((data) => setSpotifyLoginUrl(data.url))
-        .catch((err) => console.error('Failed to prefetch Spotify URL:', err));
-    }
+  const spotifyLoginUrl = useMemo(() => {
+    if (!ready || !user) return '';
+    const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
+    const clientOrigin = window.location.origin;
+    const effectiveSocketId = socketId || socketRef.current?.id || '';
+    return `/api/spotify/login?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(effectiveSocketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
   }, [ready, user, socketId]);
 
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
