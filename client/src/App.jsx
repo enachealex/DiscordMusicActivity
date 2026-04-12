@@ -24,6 +24,7 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [detached, setDetached] = useState(false);
   const [detachedService, setDetachedService] = useState(null);
+  const [detachedRoom, setDetachedRoom] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyRestoring, setSpotifyRestoring] = useState(
     () => !!localStorage.getItem('spotify_refresh_token')
@@ -47,6 +48,28 @@ export default function App() {
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const socketRef = useRef(null);
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
+
+  function cloneRoomState(baseRoom) {
+    if (!baseRoom) {
+      return {
+        queue: [],
+        currentIndex: -1,
+        isPlaying: false,
+        currentService: 'youtube',
+        position: 0,
+        syncedAt: Date.now(),
+      };
+    }
+
+    return {
+      queue: [...(baseRoom.queue || [])],
+      currentIndex: typeof baseRoom.currentIndex === 'number' ? baseRoom.currentIndex : -1,
+      isPlaying: !!baseRoom.isPlaying,
+      currentService: baseRoom.currentService || 'youtube',
+      position: Number(baseRoom.position || 0),
+      syncedAt: Number(baseRoom.syncedAt || Date.now()),
+    };
+  }
 
   // Listen for tokens posted from the Spotify OAuth popup
   useEffect(() => {
@@ -265,6 +288,18 @@ export default function App() {
       socket.on('dj:claim-cancelled', () => {
         setClaimRequest(null);
       });
+
+      socket.on('spotify-auth', (data) => {
+        const { access_token, refresh_token, expires_in } = data;
+        localStorage.setItem('spotify_refresh_token', refresh_token);
+        setSpotifyToken({
+          access_token,
+          refresh_token,
+          expires_at: Date.now() + parseInt(expires_in || '3600') * 1000,
+        });
+        setSpotifyRestoring(false);
+      });
+
       socketRef.current = socket;
       setReady(true);
     }
@@ -282,22 +317,146 @@ export default function App() {
   }
 
   const isDJ = user?.id === room.djUserId;
-  const currentTrack = room.queue[room.currentIndex] ?? null;
+  const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
+  const currentTrack = activeRoom.queue[activeRoom.currentIndex] ?? null;
 
-  function addTrack(track) { socketRef.current?.emit('queue:add', track); }
-  function skip() { socketRef.current?.emit('queue:skip'); }
-  function syncPlayer(data) { socketRef.current?.emit('player:sync', data); }
+  function addTrack(track) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        const queue = [...roomState.queue, { ...track, addedBy: user?.username || 'You' }];
+        const shouldStart = roomState.currentIndex === -1;
+        return {
+          ...roomState,
+          queue,
+          currentIndex: shouldStart ? 0 : roomState.currentIndex,
+          isPlaying: shouldStart ? true : roomState.isPlaying,
+          position: shouldStart ? 0 : roomState.position,
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:add', track);
+  }
+
+  function skip() {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        if (roomState.currentIndex < roomState.queue.length - 1) {
+          return {
+            ...roomState,
+            currentIndex: roomState.currentIndex + 1,
+            position: 0,
+            syncedAt: Date.now(),
+            isPlaying: true,
+          };
+        }
+        return { ...roomState, isPlaying: false, position: 0, syncedAt: Date.now() };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:skip');
+  }
+
+  function syncPlayer(data) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        return {
+          ...roomState,
+          position: typeof data?.position === 'number' ? data.position : roomState.position,
+          isPlaying: typeof data?.isPlaying === 'boolean' ? data.isPlaying : roomState.isPlaying,
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('player:sync', data);
+  }
   function switchService(service) { socketRef.current?.emit('service:switch', service); }
   function handleServiceChange(service) {
     if (detached) {
       setDetachedService(service);
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        return { ...roomState, currentService: service };
+      });
     } else {
       switchService(service);
     }
   }
-  function removeTrack(index) { socketRef.current?.emit('queue:remove', index); }
-  function playNow(index) { socketRef.current?.emit('queue:play-now', index); }
-  function reorderQueue(from, to) { socketRef.current?.emit('queue:reorder', { from, to }); }
+  function removeTrack(index) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        if (typeof index !== 'number' || index < 0 || index >= roomState.queue.length) return roomState;
+        const queue = [...roomState.queue];
+        queue.splice(index, 1);
+        let currentIndex = roomState.currentIndex;
+        let isPlaying = roomState.isPlaying;
+        let position = roomState.position;
+        if (queue.length === 0) {
+          currentIndex = -1;
+          isPlaying = false;
+          position = 0;
+        } else if (index === currentIndex) {
+          currentIndex = Math.min(currentIndex, queue.length - 1);
+          position = 0;
+        } else if (index < currentIndex) {
+          currentIndex = Math.max(0, currentIndex - 1);
+        }
+        return { ...roomState, queue, currentIndex, isPlaying, position, syncedAt: Date.now() };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:remove', index);
+  }
+  function playNow(index) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        if (typeof index !== 'number' || index < 0 || index >= roomState.queue.length) return roomState;
+        return {
+          ...roomState,
+          currentIndex: index,
+          position: 0,
+          syncedAt: Date.now(),
+          isPlaying: true,
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:play-now', index);
+  }
+  function reorderQueue(from, to) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        if (typeof from !== 'number' || typeof to !== 'number') return roomState;
+        if (from < 0 || from >= roomState.queue.length || to < 0 || to >= roomState.queue.length) return roomState;
+        if (from === to) return roomState;
+
+        const queue = [...roomState.queue];
+        const [moved] = queue.splice(from, 1);
+        queue.splice(to, 0, moved);
+
+        let currentIndex = roomState.currentIndex;
+        if (currentIndex === from) {
+          currentIndex = to;
+        } else if (from < currentIndex && to >= currentIndex) {
+          currentIndex -= 1;
+        } else if (from > currentIndex && to <= currentIndex) {
+          currentIndex += 1;
+        }
+
+        return { ...roomState, queue, currentIndex, syncedAt: Date.now() };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:reorder', { from, to });
+  }
   function claimDJ() { 
     socketRef.current?.emit('dj:claim'); 
     setClaimPending({ claimerUsername: user?.username || 'You', countdown: 10 });
@@ -329,7 +488,7 @@ export default function App() {
   }
 
   const isPlaying = isDJ || detached ? localPlaying : room.isPlaying;
-  const activeService = detached ? (detachedService ?? room.currentService) : room.currentService;
+  const activeService = detached ? (detachedService ?? activeRoom.currentService) : room.currentService;
 
   return (
     <div className="app">
@@ -357,7 +516,10 @@ export default function App() {
               if (detached) {
                 setDetached(false);
                 setDetachedService(null);
+                setDetachedRoom(null);
               } else {
+                setDetachedRoom(cloneRoomState(room));
+                setLocalPlaying(false);
                 setDetached(true);
               }
             }}
@@ -367,7 +529,7 @@ export default function App() {
         </header>
 
         <ServiceSelector
-          current={detached ? (detachedService ?? room.currentService) : room.currentService}
+          current={detached ? (detachedService ?? activeRoom.currentService) : room.currentService}
           onChange={handleServiceChange}
           isDJ={isDJ}
           detached={detached}
@@ -377,7 +539,7 @@ export default function App() {
           {activeService === 'youtube' ? (
             <YouTubePlayer
               track={currentTrack}
-              room={room}
+              room={activeRoom}
               isDJ={isDJ}
               detached={detached}
               onSync={syncPlayer}
@@ -389,7 +551,7 @@ export default function App() {
           ) : spotifyToken ? (
             <SpotifyPlayer
               track={currentTrack}
-              room={room}
+              room={activeRoom}
               isDJ={isDJ}
               detached={detached}
               spotifyToken={spotifyToken}
@@ -448,6 +610,7 @@ export default function App() {
           onVolumeChange={handleVolumeChange}
           currentTrack={currentTrack}
         />
+        {/* Debug strip hidden from users — uncomment to re-enable:
         <div className="debug-strip" role="status" aria-live="polite">
           <span className="debug-chip">svc: {activeService}</span>
           <span className="debug-chip">room: {room.isPlaying ? 'playing' : 'paused'}</span>
@@ -459,27 +622,35 @@ export default function App() {
           <span className="debug-chip">playAPI: {debugInfo.spotifyLastPlayStatus || '-'}</span>
           <span className="debug-chip">evt: {debugInfo.lastEvent || '-'}</span>
         </div>
+        */}
       </div>
 
       {/* Right column: search + queue */}
       <div className="app-right">
         <Search
-          service={room.currentService}
+          service={activeService}
           spotifyToken={spotifyToken?.access_token}
           spotifyRestoring={spotifyRestoring}
-          queue={room.queue}
+          queue={activeRoom.queue}
           onAdd={addTrack}
           onSpotifyLogin={() => {
             const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
             const clientOrigin = window.location.origin;
-            const w = 480, h = 700;
-            const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
-            const top = Math.round(window.screenY + (window.outerHeight - h) / 2);
-            window.open(
-              `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`,
-              'spotify-auth',
-              `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`
-            );
+            const socketId = socketRef.current?.id || '';
+            const loginUrl = `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+            
+            if (discordSdk && window.parent !== window) {
+              discordSdk.commands.openExternalLink({ url: loginUrl });
+            } else {
+              const w = 480, h = 700;
+              const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
+              const top = Math.round(window.screenY + (window.outerHeight - h) / 2);
+              window.open(
+                loginUrl,
+                'spotify-auth',
+                `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`
+              );
+            }
           }}
           onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
@@ -488,9 +659,9 @@ export default function App() {
           }}
         />
         <Queue
-          queue={room.queue}
-          currentIndex={room.currentIndex}
-          isDJ={isDJ}
+          queue={activeRoom.queue}
+          currentIndex={activeRoom.currentIndex}
+          isDJ={isDJ || detached}
           onRemove={removeTrack}
           onPlayNow={playNow}
           onReorder={reorderQueue}

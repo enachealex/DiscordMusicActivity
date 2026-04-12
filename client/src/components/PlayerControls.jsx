@@ -71,8 +71,8 @@ export default function PlayerControls({
           <button
             className="ctrl-btn"
             onClick={onSkip}
-            disabled={!isDJ || !currentTrack}
-            title={isDJ ? 'Skip to next track' : 'Only the DJ can skip'}
+            disabled={!canControl || !currentTrack}
+            title={canControl ? 'Skip to next track' : 'Only the DJ can skip'}
           >
             ⏭
           </button>

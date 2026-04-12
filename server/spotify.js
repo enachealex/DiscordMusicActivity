@@ -3,6 +3,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { io } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env') });
@@ -41,7 +42,8 @@ spotifyRouter.get('/login', (req, res) => {
   // Client passes its own window.location.origin so we always use the correct URL
   const origin = req.query.origin || process.env.CLIENT_URL || 'http://localhost:5173';
   const clientOrigin = req.query.client_origin || origin;
-  const state = JSON.stringify({ userId: req.query.userId || '', origin, clientOrigin });
+  const socketId = req.query.socketId || '';
+  const state = JSON.stringify({ userId: req.query.userId || '', socketId, origin, clientOrigin });
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: CLIENT_ID,
@@ -109,10 +111,12 @@ export async function handleSpotifyCallback(req, res) {
   // Recover the origin we encoded in state during /login
   let origin = process.env.CLIENT_URL || 'http://localhost:5173';
   let clientOrigin = origin;
+  let socketId = '';
   try {
     const parsed = JSON.parse(state || '{}');
     if (parsed.origin) origin = parsed.origin;
     if (parsed.clientOrigin) clientOrigin = parsed.clientOrigin;
+    if (parsed.socketId) socketId = parsed.socketId;
   } catch { /* state may be a plain userId string from old sessions */ }
 
   try {
@@ -131,13 +135,18 @@ export async function handleSpotifyCallback(req, res) {
       }
     );
 
-    // Return a self-closing popup page that messages the parent and closes
-    const payload = JSON.stringify({
+    const payloadObj = {
       type: 'spotify-auth',
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       expires_in: data.expires_in,
-    });
+    };
+    const payload = JSON.stringify(payloadObj);
+
+    // If we have a socketId (likely from an embedded app context), send the token to it directly
+    if (socketId && io) {
+      io.to(socketId).emit('spotify-auth', payloadObj);
+    }
     res.send(`<!DOCTYPE html><html><head><title>Connecting to Spotify...</title>
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#121212;color:#fff;}p{font-size:16px;}</style>
 </head><body><p>Connecting to Spotify...</p><script>

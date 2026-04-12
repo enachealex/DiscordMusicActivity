@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 function thumbSrc(url) {
   if (!url) return '';
@@ -13,6 +13,8 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   const [dragIndex, setDragIndex] = useState(null);
   const [dropIndex, setDropIndex] = useState(null);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, index }
+  const pointerDownRef = useRef(null);
+  const draggedRef = useRef(false);
 
   function handleContextMenu(e, index) {
     e.preventDefault();
@@ -25,6 +27,7 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   }
 
   function handleDragStart(e, index) {
+    draggedRef.current = true;
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
   }
@@ -45,8 +48,41 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   }
 
   function handleDragEnd() {
+    window.setTimeout(() => {
+      draggedRef.current = false;
+    }, 0);
     setDragIndex(null);
     setDropIndex(null);
+  }
+
+  function handleMouseDown(e, index) {
+    if (e.button !== 0) return;
+    pointerDownRef.current = {
+      index,
+      x: e.clientX,
+      y: e.clientY,
+      moved: false,
+    };
+  }
+
+  function handleMouseMove(e) {
+    if (!pointerDownRef.current) return;
+    const dx = Math.abs(e.clientX - pointerDownRef.current.x);
+    const dy = Math.abs(e.clientY - pointerDownRef.current.y);
+    if (dx > 4 || dy > 4) {
+      pointerDownRef.current.moved = true;
+    }
+  }
+
+  function handleMouseUp(e, index) {
+    if (e.button !== 0) return;
+    const down = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (!down) return;
+    if (down.index !== index) return;
+    if (down.moved) return;
+    if (draggedRef.current) return;
+    onPlayNow(index);
   }
 
   return (
@@ -69,6 +105,9 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
               onDrop={(e) => handleDrop(e, i)}
               onDragEnd={handleDragEnd}
               onContextMenu={(e) => handleContextMenu(e, i)}
+              onMouseDown={(e) => handleMouseDown(e, i)}
+              onMouseMove={handleMouseMove}
+              onMouseUp={(e) => handleMouseUp(e, i)}
             >
               {track.thumbnail && <img src={thumbSrc(track.thumbnail)} alt="" />}
               <div className="queue-item-info">

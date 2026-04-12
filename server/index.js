@@ -14,7 +14,7 @@ dotenv.config({ path: join(__dirname, '../.env') });
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
+export const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
 });
 
