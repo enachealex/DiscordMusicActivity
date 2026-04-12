@@ -27,6 +27,7 @@ export default function App() {
   const [detachedRoom, setDetachedRoom] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
     const [spotifyLoginUrl, setSpotifyLoginUrl] = useState('');
+  const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyRestoring, setSpotifyRestoring] = useState(
     () => !!localStorage.getItem('spotify_refresh_token')
@@ -50,18 +51,17 @@ export default function App() {
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const socketRef = useRef(null);
   useEffect(() => {
-    if (ready && user && socketRef.current?.id) {
+    if (ready && user && socketId) {
       const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
       const clientOrigin = window.location.origin;
-      const socketId = socketRef.current.id;
-      const fetchUrl = `${serverOrigin}/api/spotify/login-url?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+      const fetchUrl = `/api/spotify/login-url?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
       
       fetch(fetchUrl)
         .then((res) => res.json())
         .then((data) => setSpotifyLoginUrl(data.url))
         .catch((err) => console.error('Failed to prefetch Spotify URL:', err));
     }
-  }, [ready, user]);
+  }, [ready, user, socketId]);
 
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
 
@@ -317,6 +317,8 @@ export default function App() {
       });
 
       socketRef.current = socket;
+      socket.on('connect', () => setSocketId(socket.id));
+      if(socket.connected) setSocketId(socket.id);
       setReady(true);
     }
     init();
