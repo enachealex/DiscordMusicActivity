@@ -54,21 +54,21 @@ spotifyRouter.get('/login', (req, res) => {
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
 });
 
-// Proxy search so the API key is never exposed to the client
-spotifyRouter.get('/search', async (req, res) => {
-  const { q, access_token } = req.query;
-  if (!q || !access_token) return res.status(400).json({ error: 'q and access_token required' });
-
-  try {
-    const { data } = await axios.get('https://api.spotify.com/v1/search', {
-      params: { q, type: 'track', limit: 10 },
-      headers: { Authorization: `Bearer ${access_token}` },
+  // Return the Spotify login URL as JSON to support Discord SDK openExternalLink
+  spotifyRouter.get('/login-url', (req, res) => {
+    const origin = req.query.origin || process.env.CLIENT_URL || 'http://localhost:5173';
+    const clientOrigin = req.query.client_origin || origin;
+    const socketId = req.query.socketId || '';
+    const state = JSON.stringify({ userId: req.query.userId || '', socketId, origin, clientOrigin });
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      redirect_uri: buildRedirectUri(origin),
+      state,
     });
-    const tracks = data.tracks.items.map((track) => ({
-      id: track.uri,
-      title: track.name,
-      artist: track.artists.map((a) => a.name).join(', '),
-      thumbnail: proxiedThumb(track.album.images[1]?.url || track.album.images[0]?.url),
+    res.json({ url: `https://accounts.spotify.com/authorize?${params}` });
+  });
       duration: track.duration_ms,
       service: 'spotify',
     }));

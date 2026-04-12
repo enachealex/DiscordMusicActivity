@@ -644,13 +644,25 @@ export default function App() {
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
           onAdd={addTrack}
-          onSpotifyLogin={(() => {
+                    onSpotifyLogin={async () => {
             const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
             const clientOrigin = window.location.origin;
-            const socketId = socketRef.current?.id || '';
-            return `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
-          })()}
-          onSpotifyLogout={() => {
+            const socketId = socketRef.current?.id || "";
+            try {
+              const fetchUrl = `${serverOrigin}/api/spotify/login-url?userId=${encodeURIComponent(user?.id || "")}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
+              const res = await fetch(fetchUrl);
+              const data = await res.json();
+              if (discordSdk) {
+                await discordSdk.commands.openExternalLink({ url: data.url });
+              } else {
+                window.open(data.url, "_blank");
+              }
+            } catch (err) {
+              console.error("Failed to launch Spotify login:", err);
+            }
+          }}
+
+            onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
             setSpotifyToken(null);
             setSpotifyRestoring(false);
