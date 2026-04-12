@@ -69,10 +69,26 @@ spotifyRouter.get('/login', (req, res) => {
     });
     res.json({ url: `https://accounts.spotify.com/authorize?${params}` });
   });
-      duration: track.duration_ms,
-      service: 'spotify',
-    }));
-    res.json(tracks);
+
+  // Proxy search so the API key is never exposed to the client
+  spotifyRouter.get('/search', async (req, res) => {
+    const { q, access_token } = req.query;
+    if (!q || !access_token) return res.status(400).json({ error: 'q and access_token required' });
+
+    try {
+      const { data } = await axios.get('https://api.spotify.com/v1/search', {
+        params: { q, type: 'track', limit: 10 },
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      const tracks = data.tracks.items.map((track) => ({
+        id: track.uri,
+        title: track.name,
+        artist: track.artists.map((a) => a.name).join(', '),
+        thumbnail: proxiedThumb(track.album.images[1]?.url || track.album.images[0]?.url),
+        duration: track.duration_ms,
+        service: 'spotify',
+      }));
+      res.json(tracks);
   } catch (err) {
     console.error('Spotify search error:', err.response?.data);
     res.status(500).json({ error: 'Spotify search failed' });
