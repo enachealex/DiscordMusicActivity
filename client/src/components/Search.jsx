@@ -36,7 +36,13 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           <br />
           <strong>Spotify Premium is required for playback.</strong>
         </p>
-        <button className="btn-spotify" onClick={onSpotifyLogin}>
+        <button className="btn-spotify" onClick={() => {
+          if (typeof onSpotifyLogin === 'string') {
+            window.open(onSpotifyLogin, '_blank');
+          } else {
+            onSpotifyLogin();
+          }
+        }}>
           Connect Spotify
         </button>
         <p className="spotify-note">Spotify Premium required for in-app playback.</p>

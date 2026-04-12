@@ -639,17 +639,17 @@ export default function App() {
             const socketId = socketRef.current?.id || '';
             const loginUrl = `${serverOrigin}/api/spotify/login?userId=${encodeURIComponent(user?.id || '')}&socketId=${encodeURIComponent(socketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
             
-            if (discordSdk && window.parent !== window) {
-              discordSdk.commands.openExternalLink({ url: loginUrl });
-            } else {
-              const w = 480, h = 700;
-              const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
-              const top = Math.round(window.screenY + (window.outerHeight - h) / 2);
-              window.open(
-                loginUrl,
-                'spotify-auth',
-                `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`
-              );
+            try {
+              if (discordSdk && window.parent !== window) {
+                // Tell Discord to open the link natively in the user's browser
+                discordSdk.commands.openExternalLink({ url: loginUrl }).catch(() => {
+                  window.open(loginUrl, '_blank', 'noreferrer');
+                });
+              } else {
+                window.open(loginUrl, '_blank', 'noreferrer');
+              }
+            } catch (err) {
+              window.open(loginUrl, '_blank', 'noreferrer');
             }
           }}
           onSpotifyLogout={() => {
