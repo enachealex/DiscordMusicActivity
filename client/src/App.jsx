@@ -354,11 +354,13 @@ export default function App() {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
         const queue = [...roomState.queue, { ...track, addedBy: user?.username || 'You' }];
-        const shouldStart = roomState.currentIndex === -1;
+        const shouldStart =
+          roomState.currentIndex === -1 ||
+          !roomState.isPlaying;
         return {
           ...roomState,
           queue,
-          currentIndex: shouldStart ? 0 : roomState.currentIndex,
+          currentIndex: shouldStart ? queue.length - 1 : roomState.currentIndex,
           isPlaying: shouldStart ? true : roomState.isPlaying,
           position: shouldStart ? 0 : roomState.position,
           syncedAt: Date.now(),
@@ -410,6 +412,9 @@ export default function App() {
     if (detached) {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
+        if (roomState.queue.length === 0) {
+          return { ...roomState, currentIndex: -1, isPlaying: false, position: 0, syncedAt: Date.now() };
+        }
         if (roomState.currentIndex < roomState.queue.length - 1) {
           return {
             ...roomState,
@@ -419,7 +424,13 @@ export default function App() {
             isPlaying: true,
           };
         }
-        return { ...roomState, isPlaying: false, position: 0, syncedAt: Date.now() };
+        return {
+          ...roomState,
+          currentIndex: 0,
+          isPlaying: true,
+          position: 0,
+          syncedAt: Date.now(),
+        };
       });
       return;
     }
@@ -666,7 +677,16 @@ export default function App() {
           </div>
         </div>
 
-        <div className="app-left-fill" />
+        <div className="app-queue-slot">
+          <Queue
+            queue={activeRoom.queue}
+            currentIndex={activeRoom.currentIndex}
+            isDJ={isDJ || detached}
+            onRemove={removeTrack}
+            onPlayNow={playNow}
+            onReorder={reorderQueue}
+          />
+        </div>
 
         <PlayerControls
           isPlaying={isPlaying}
@@ -711,7 +731,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Right column: search + queue */}
+      {/* Right column: search */}
       <div className="app-right">
         <Search
           service={activeService}
@@ -729,14 +749,7 @@ export default function App() {
             setSpotifyRestoring(false);
           }}
         />
-        <Queue
-          queue={activeRoom.queue}
-          currentIndex={activeRoom.currentIndex}
-          isDJ={isDJ || detached}
-          onRemove={removeTrack}
-          onPlayNow={playNow}
-          onReorder={reorderQueue}
-        />
+        <div className="app-right-fill" />
       </div>
 
       {/* DJ claim modal — shown to DJ when someone requests */}

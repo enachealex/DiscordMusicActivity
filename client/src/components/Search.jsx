@@ -408,20 +408,24 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   return (
     <div className="search-panel">
       <form onSubmit={handleSearch} className="search-input-wrapper">
-        <input
-          className="search-input"
-          placeholder={`Search ${service === 'youtube' ? 'YouTube' : 'Spotify'}…`}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {query && (
-          <button type="button" className="btn-clear-search" onClick={clearSearch} aria-label="Clear search">
-            ×
+        <div className="search-input-row">
+          <div className="search-input-field">
+            <input
+              className="search-input"
+              placeholder={`Search ${service === 'youtube' ? 'YouTube' : 'Spotify'}…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button type="button" className="btn-clear-search" onClick={clearSearch} aria-label="Clear search">
+                ×
+              </button>
+            )}
+          </div>
+          <button type="submit" className="btn-search" disabled={loading}>
+            {loading ? '…' : 'Search'}
           </button>
-        )}
-        <button type="submit" className="btn-search" disabled={loading}>
-          {loading ? '…' : 'Search'}
-        </button>
+        </div>
 
         <div className="search-action-bar">
           <button
@@ -517,12 +521,12 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                     onTouchEnd={() => clearTimeout(longPressTimerRef.current)}
                     onTouchMove={() => clearTimeout(longPressTimerRef.current)}
                   >
-                    {track.thumbnail && <img src={thumbSrc(track.thumbnail)} alt="" />}
                     <div className="playlist-item-info">
+                      <div className="meta">#{index + 1}</div>
                       <div className="title">{track.title}</div>
                       <div className="artist">{track.artist}</div>
                     </div>
-                    <span className="playlist-item-badge">#{index + 1}</span>
+                    <div className="playlist-item-detail">{track.service === 'spotify' ? 'Spotify' : 'YouTube'}</div>
                   </div>
                 ))
               ) : (

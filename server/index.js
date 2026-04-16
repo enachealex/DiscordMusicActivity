@@ -193,8 +193,11 @@ io.on('connection', async (socket) => {
       service: track.service,
       addedBy: username,
     });
-    if (room.currentIndex === -1) {
-      room.currentIndex = 0;
+    const shouldStart =
+      room.currentIndex === -1 ||
+      !room.isPlaying;
+    if (shouldStart) {
+      room.currentIndex = room.queue.length - 1;
       room.isPlaying = true;
       room.position = 0;
       room.syncedAt = Date.now();
@@ -206,13 +209,24 @@ io.on('connection', async (socket) => {
   // Only the DJ can skip
   socket.on('queue:skip', () => {
     if (userId !== room.djUserId) return;
+    if (room.queue.length === 0) {
+      room.currentIndex = -1;
+      room.isPlaying = false;
+      room.position = 0;
+      room.syncedAt = Date.now();
+      io.to(channelId).emit('room:state', { ...room });
+      return;
+    }
     if (room.currentIndex < room.queue.length - 1) {
       room.currentIndex++;
       room.position = 0;
       room.syncedAt = Date.now();
       room.isPlaying = true;
     } else {
-      room.isPlaying = false;
+      room.currentIndex = 0;
+      room.position = 0;
+      room.syncedAt = Date.now();
+      room.isPlaying = true;
     }
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
