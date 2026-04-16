@@ -17,6 +17,17 @@ function proxiedThumb(url) {
   return `/media/thumb?src=${encodeURIComponent(url)}`;
 }
 
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
 youtubeRouter.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Query required' });
@@ -35,14 +46,15 @@ youtubeRouter.get('/search', async (req, res) => {
 
     const results = data.items.map((item) => ({
       id: item.id.videoId,
-      title: item.snippet.title,
-      artist: item.snippet.channelTitle,
+      title: decodeHtmlEntities(item.snippet.title),
+      artist: decodeHtmlEntities(item.snippet.channelTitle),
       thumbnail: proxiedThumb(
         item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url
       ),
       service: 'youtube',
     }));
 
+    console.log('[YT search] first title:', results[0]?.title);
     res.json(results);
   } catch (err) {
     console.error('YouTube search error:', err.response?.data);
@@ -60,13 +72,19 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Use yt-dlp to get the best audio URL
-    const ytdlp = spawn('yt-dlp', [
-      '-f', 'bestaudio[ext=webm]/bestaudio',
-      '--no-playlist',
-      '--no-warnings',
-      '-g',  // print URL only
-      url,
-    ]);
+    let ytdlp;
+    try {
+      ytdlp = spawn('yt-dlp', [
+        '-f', 'bestaudio[ext=webm]/bestaudio',
+        '--no-playlist',
+        '--no-warnings',
+        '-g',  // print URL only
+        url,
+      ]);
+    } catch (spawnError) {
+      console.error('yt-dlp not found:', spawnError.message);
+      return res.status(502).json({ error: 'Audio extraction tool not available' });
+    }
 
     let audioUrl = '';
     let stderr = '';
@@ -91,7 +109,8 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
     const response = await axios.get(audioUrl, {
       responseType: 'stream',
       headers,
-      timeout: 30000,
+      // Long tracks can exceed 30s; disable axios timeout for streaming.
+      timeout: 0,
     });
 
     // Forward status and relevant headers
@@ -107,6 +126,14 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
       console.error('YouTube audio stream error:', err.message);
       if (!res.headersSent) res.status(502).end('Audio stream failed');
     });
+
+    // Stop pulling from upstream when the client disconnects.
+    req.on('close', () => {
+      if (!response.data.destroyed) {
+        response.data.destroy();
+      }
+    });
+
     response.data.pipe(res);
   } catch (err) {
     console.error('YouTube audio route error:', err.message);

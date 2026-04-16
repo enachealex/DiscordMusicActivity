@@ -179,7 +179,10 @@ export default function App() {
     const t = setInterval(() => {
       const pos = playerActionsRef.current.getPosition();
       const dur = playerActionsRef.current.getDuration();
-      if (dur > 0) { setProgress(pos); setDuration(dur); }
+      const safePos = Number.isFinite(pos) ? Math.max(0, pos) : 0;
+      const safeDur = Number.isFinite(dur) && dur > 0 ? dur : 0;
+      setDuration(safeDur);
+      setProgress(safeDur > 0 ? Math.min(safePos, safeDur) : safePos);
     }, 500);
     return () => clearInterval(t);
   }, []);
@@ -319,6 +322,22 @@ export default function App() {
     return () => socketRef.current?.disconnect();
   }, []);
 
+  const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
+  const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
+  const activeService = detached ? (detachedService ?? activeRoom?.currentService) : room?.currentService;
+
+  // Ensure each track starts with a fresh timeline in the UI.
+  useEffect(() => {
+    if (!currentTrack) {
+      setProgress(0);
+      setDuration(0);
+      return;
+    }
+    const initial = Number(activeRoom?.position || 0);
+    setProgress(Number.isFinite(initial) ? Math.max(0, initial) : 0);
+    setDuration(0);
+  }, [currentTrack?.id, activeService, detached]);
+
   if (!ready || !room) {
     return (
       <div className="loading">
@@ -329,8 +348,6 @@ export default function App() {
   }
 
   const isDJ = user?.id === room.djUserId;
-  const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
-  const currentTrack = activeRoom.queue[activeRoom.currentIndex] ?? null;
 
   function addTrack(track) {
     if (detached) {
@@ -350,6 +367,43 @@ export default function App() {
       return;
     }
     socketRef.current?.emit('queue:add', track);
+  }
+
+  function playTrack(track) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        const queue = [...roomState.queue, { ...track, addedBy: user?.username || 'You' }];
+        return {
+          ...roomState,
+          queue,
+          currentIndex: queue.length - 1,
+          isPlaying: true,
+          position: 0,
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:play-track', track);
+  }
+
+  function loadPlaylist(tracks) {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        return {
+          ...roomState,
+          queue: tracks.map((track) => ({ ...track, addedBy: user?.username || 'You' })),
+          currentIndex: tracks.length > 0 ? 0 : -1,
+          isPlaying: tracks.length > 0,
+          position: 0,
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:load-playlist', tracks);
   }
 
   function skip() {
@@ -470,6 +524,7 @@ export default function App() {
     socketRef.current?.emit('queue:reorder', { from, to });
   }
   function claimDJ() { 
+    if (detached) return;
     socketRef.current?.emit('dj:claim'); 
     setClaimPending({ claimerUsername: user?.username || 'You', countdown: 10 });
   }
@@ -500,7 +555,6 @@ export default function App() {
   }
 
   const isPlaying = isDJ || detached ? localPlaying : room.isPlaying;
-  const activeService = detached ? (detachedService ?? activeRoom.currentService) : room.currentService;
 
   return (
     <div className="app">
@@ -518,7 +572,12 @@ export default function App() {
           <h1 className="app-title">Music</h1>
           <DJBadge isDJ={isDJ} />
           {!isDJ && (
-            <button className="btn-claim-dj" onClick={claimDJ} title="Become the DJ if the current DJ is offline">
+            <button
+              className="btn-claim-dj"
+              onClick={claimDJ}
+              disabled={detached}
+              title={detached ? 'Rejoin the group to claim DJ' : 'Become the DJ if the current DJ is offline'}
+            >
               Claim DJ
             </button>
           )}
@@ -635,6 +694,11 @@ export default function App() {
         {showDebug && (
           <div className="debug-strip" role="status" aria-live="polite">
             <span className="debug-chip">svc: {activeService}</span>
+            {activeService === 'youtube' ? (
+              <span className="debug-chip">status: YouTube ready</span>
+            ) : (
+              <span className="debug-chip">status: {spotifyToken ? 'Spotify connected' : 'Spotify auth required'}</span>
+            )}
             <span className="debug-chip">room: {room.isPlaying ? 'playing' : 'paused'}</span>
             <span className="debug-chip">local: {localPlaying ? 'playing' : 'paused'}</span>
             <span className="debug-chip">player: {debugInfo.playerState || '-'}</span>
@@ -654,10 +718,12 @@ export default function App() {
           spotifyToken={spotifyToken?.access_token}
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
+          isDJ={isDJ}
           onAdd={addTrack}
-                    onSpotifyLogin={spotifyLoginUrl}
-
-            onSpotifyLogout={() => {
+          onPlayTrack={playTrack}
+          onLoadPlaylist={loadPlaylist}
+          onSpotifyLogin={spotifyLoginUrl}
+          onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
             setSpotifyToken(null);
             setSpotifyRestoring(false);

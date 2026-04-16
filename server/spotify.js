@@ -13,13 +13,14 @@ export const spotifyRouter = express.Router();
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
+// Minimal scopes required for Web Playback SDK
+// If you need more, enable them in Spotify Dashboard first (Settings > Users and Access)
 const SCOPES = [
-  'user-read-playback-state',
-  'user-modify-playback-state',
-  'user-read-currently-playing',
   'streaming',
   'user-read-email',
   'user-read-private',
+  'user-read-playback-state',
+  'user-modify-playback-state',
 ].join(' ');
 
 function basicAuth() {

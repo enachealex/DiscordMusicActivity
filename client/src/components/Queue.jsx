@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function thumbSrc(url) {
   if (!url) return '';
@@ -13,18 +13,80 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   const [dragIndex, setDragIndex] = useState(null);
   const [dropIndex, setDropIndex] = useState(null);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, index }
+  const [playlistDropdown, setPlaylistDropdown] = useState(null); // { x, y, index }
+  const [playlists, setPlaylists] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('discord-music-activity-playlists') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const pointerDownRef = useRef(null);
   const draggedRef = useRef(false);
+  const longPressTimerRef = useRef(null);
+  const contextMenuRef = useRef(null);
+  const playlistDropdownRef = useRef(null);
 
   function handleContextMenu(e, index) {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, index });
+    setPlaylistDropdown(null);
   }
 
   function closeMenu() {
     setContextMenu(null);
+    setPlaylistDropdown(null);
   }
+
+  function clampMenuPosition(state, ref, setState) {
+    if (!state || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const margin = 8;
+    let x = state.x;
+    let y = state.y;
+    const maxX = window.innerWidth - rect.width - margin;
+    const maxY = window.innerHeight - rect.height - margin;
+    if (x > maxX) x = Math.max(margin, maxX);
+    if (y > maxY) y = Math.max(margin, maxY);
+    if (x < margin) x = margin;
+    if (y < margin) y = margin;
+    if (x !== state.x || y !== state.y) {
+      setState((prev) => (prev ? { ...prev, x, y } : prev));
+    }
+  }
+
+  useEffect(() => {
+    clampMenuPosition(contextMenu, contextMenuRef, setContextMenu);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    clampMenuPosition(playlistDropdown, playlistDropdownRef, setPlaylistDropdown);
+  }, [playlistDropdown]);
+
+  useEffect(() => {
+    function handleClickOutside() {
+      if (contextMenu || playlistDropdown) {
+        setContextMenu(null);
+        setPlaylistDropdown(null);
+      }
+    }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [contextMenu, playlistDropdown]);
+
+  useEffect(() => {
+    function handleStorage(event) {
+      if (event.key !== 'discord-music-activity-playlists') return;
+      try {
+        setPlaylists(JSON.parse(event.newValue || '[]'));
+      } catch {
+        // ignore invalid storage values
+      }
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   function handleDragStart(e, index) {
     draggedRef.current = true;
@@ -53,6 +115,40 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
     }, 0);
     setDragIndex(null);
     setDropIndex(null);
+  }
+
+  function openPlaylistDropdown(e, index) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu(null);
+    setPlaylistDropdown({ x: rect.left, y: rect.bottom + 4, index });
+  }
+
+  function persistPlaylists(nextPlaylists) {
+    try {
+      localStorage.setItem('discord-music-activity-playlists', JSON.stringify(nextPlaylists));
+      setPlaylists(nextPlaylists);
+    } catch {
+      // ignore localStorage failure
+    }
+  }
+
+  function addTrackToPlaylist(track, playlistId) {
+    const nextPlaylists = playlists.map((playlist) =>
+      playlist.id === playlistId
+        ? { ...playlist, tracks: [...playlist.tracks, track] }
+        : playlist
+    );
+    persistPlaylists(nextPlaylists);
+    setPlaylistDropdown(null);
+    setContextMenu(null);
+  }
+
+  function requestPlaylistCreation(track) {
+    window.dispatchEvent(new CustomEvent('playlist:create-request', { detail: { track } }));
+    setPlaylistDropdown(null);
+    setContextMenu(null);
   }
 
   function handleMouseDown(e, index) {
@@ -108,6 +204,15 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
               onMouseDown={(e) => handleMouseDown(e, i)}
               onMouseMove={handleMouseMove}
               onMouseUp={(e) => handleMouseUp(e, i)}
+              onTouchStart={(e) => {
+                longPressTimerRef.current = setTimeout(() => {
+                  const touch = e.touches?.[0];
+                  setContextMenu({ x: touch?.clientX || 0, y: (touch?.clientY || 0) + 20, index: i });
+                  setPlaylistDropdown(null);
+                }, 500);
+              }}
+              onTouchEnd={() => clearTimeout(longPressTimerRef.current)}
+              onTouchMove={() => clearTimeout(longPressTimerRef.current)}
             >
               {track.thumbnail && <img src={thumbSrc(track.thumbnail)} alt="" />}
               <div className="queue-item-info">
@@ -117,6 +222,24 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
                 </div>
               </div>
               <span className="drag-handle" title="Drag to reorder">⠿</span>
+              <div className="queue-mobile-controls">
+                <button
+                  className="queue-move-btn"
+                  onClick={() => i > 0 && onReorder(i, i - 1)}
+                  disabled={i === 0}
+                  title="Move up"
+                >
+                  ↑
+                </button>
+                <button
+                  className="queue-move-btn"
+                  onClick={() => i < queue.length - 1 && onReorder(i, i + 1)}
+                  disabled={i === queue.length - 1}
+                  title="Move down"
+                >
+                  ↓
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -124,6 +247,7 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
 
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
@@ -136,9 +260,47 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
             </button>
           )}
           <button
+            onClick={(e) => { openPlaylistDropdown(e, contextMenu.index); }}
+          >
+            + Add to Playlist
+          </button>
+          <button
             onClick={() => { onRemove(contextMenu.index); closeMenu(); }}
           >
             🗑 Delete
+          </button>
+        </div>
+      )}
+
+      {playlistDropdown && (
+        <div
+          ref={playlistDropdownRef}
+          className="playlist-dropdown-menu"
+          style={{ top: playlistDropdown.y, left: playlistDropdown.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="playlist-dropdown-header">Add to Playlist</div>
+          {playlists.length > 0 ? (
+            playlists.map((playlist) => (
+              <button
+                key={playlist.id}
+                className="playlist-dropdown-item"
+                onClick={() => addTrackToPlaylist(queue[playlistDropdown.index], playlist.id)}
+              >
+                {playlist.name}
+              </button>
+            ))
+          ) : (
+            <div className="playlist-dropdown-item" style={{ cursor: 'default', color: 'var(--text-muted)' }}>
+              No playlists created yet
+            </div>
+          )}
+          <div className="playlist-dropdown-divider" />
+          <button
+            className="playlist-dropdown-item"
+            onClick={() => requestPlaylistCreation(queue[playlistDropdown.index])}
+          >
+            + New Playlist
           </button>
         </div>
       )}

@@ -6,11 +6,21 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs/promises';
 import { spotifyRouter, handleSpotifyCallback } from './spotify.js';
 import { youtubeRouter } from './youtube.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env') });
+
+const playlistsDir = join(__dirname, 'playlists');
+
+// Ensure playlists directory exists
+try {
+  await fs.mkdir(playlistsDir, { recursive: true });
+} catch (err) {
+  console.error('Failed to create playlists directory:', err);
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -114,11 +124,32 @@ const rooms = new Map();
 // Pending DJ-claim requests  (channelId → { claimerId, claimerUsername, timer, claimerSocketId })
 const pendingClaims = new Map();
 
-function getRoom(channelId) {
+async function saveQueue(channelId, queue) {
+  try {
+    const filePath = join(playlistsDir, `${channelId}.json`);
+    await fs.writeFile(filePath, JSON.stringify(queue, null, 2));
+  } catch (err) {
+    console.error(`Failed to save queue for channel ${channelId}:`, err);
+  }
+}
+
+async function loadQueue(channelId) {
+  try {
+    const filePath = join(playlistsDir, `${channelId}.json`);
+    const data = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    // File doesn't exist or error reading, return empty queue
+    return [];
+  }
+}
+
+async function getRoom(channelId) {
   if (!rooms.has(channelId)) {
+    const queue = await loadQueue(channelId);
     rooms.set(channelId, {
-      queue: [],
-      currentIndex: -1,
+      queue,
+      currentIndex: queue.length > 0 ? 0 : -1,
       isPlaying: false,
       djUserId: null,
       currentService: 'youtube',
@@ -132,7 +163,7 @@ function getRoom(channelId) {
 // ────────────────────────────────────────────────
 // Socket.io — real-time sync
 // ────────────────────────────────────────────────
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const { channelId, userId, username } = socket.handshake.query;
 
   if (!channelId || !userId) {
@@ -141,7 +172,7 @@ io.on('connection', (socket) => {
   }
 
   socket.join(channelId);
-  const room = getRoom(channelId);
+  const room = await getRoom(channelId);
 
   // First user becomes DJ; if the previous DJ reconnects, restore their role
   if (!room.djUserId || room.djUserId === userId) {
@@ -169,6 +200,7 @@ io.on('connection', (socket) => {
       room.syncedAt = Date.now();
     }
     io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
   });
 
   // Only the DJ can skip
@@ -183,6 +215,7 @@ io.on('connection', (socket) => {
       room.isPlaying = false;
     }
     io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
   });
 
   // DJ pushes periodic position/state sync to followers
@@ -217,6 +250,7 @@ io.on('connection', (socket) => {
       room.currentIndex = Math.max(0, room.currentIndex - 1);
     }
     io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
   });
 
   // DJ jumps to a specific track
@@ -228,6 +262,48 @@ io.on('connection', (socket) => {
     room.syncedAt = Date.now();
     room.isPlaying = true;
     io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
+  });
+
+  socket.on('queue:play-track', (track) => {
+    if (userId !== room.djUserId) return;
+    if (!track?.id || !track?.title || !track?.service) return;
+    room.queue.push({
+      id: track.id,
+      title: track.title,
+      artist: track.artist || '',
+      thumbnail: track.thumbnail || '',
+      service: track.service,
+      addedBy: username,
+    });
+    room.currentIndex = room.queue.length - 1;
+    room.position = 0;
+    room.isPlaying = true;
+    room.syncedAt = Date.now();
+    io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
+  });
+
+  socket.on('queue:load-playlist', (tracks) => {
+    if (userId !== room.djUserId) return;
+    if (!Array.isArray(tracks)) return;
+    const playlistTracks = tracks
+      .filter((track) => track?.id && track?.title && track?.service)
+      .map((track) => ({
+        id: track.id,
+        title: track.title,
+        artist: track.artist || '',
+        thumbnail: track.thumbnail || '',
+        service: track.service,
+        addedBy: username,
+      }));
+    room.queue = playlistTracks;
+    room.currentIndex = playlistTracks.length > 0 ? 0 : -1;
+    room.isPlaying = playlistTracks.length > 0;
+    room.position = 0;
+    room.syncedAt = Date.now();
+    io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
   });
 
   // Any user can claim DJ:
