@@ -11,6 +11,9 @@ dotenv.config({ path: join(__dirname, '../.env') });
 export const youtubeRouter = express.Router();
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const AUDIO_URL_TTL_MS = 10 * 60 * 1000;
+const audioUrlCache = new Map();
+const inflightAudioUrlResolves = new Map();
 
 function proxiedThumb(url) {
   if (!url) return '';
@@ -26,6 +29,94 @@ function decodeHtmlEntities(str) {
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
+}
+
+function getCachedAudioUrl(videoId) {
+  const cached = audioUrlCache.get(videoId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    audioUrlCache.delete(videoId);
+    return null;
+  }
+  return cached.audioUrl;
+}
+
+function pruneAudioUrlCache(maxEntries = 500) {
+  if (audioUrlCache.size <= maxEntries) return;
+  for (const [key, value] of audioUrlCache.entries()) {
+    if (value.expiresAt <= Date.now()) {
+      audioUrlCache.delete(key);
+    }
+  }
+}
+
+async function resolveAudioUrl(videoId) {
+  const cachedAudioUrl = getCachedAudioUrl(videoId);
+  if (cachedAudioUrl) {
+    return { audioUrl: cachedAudioUrl, fromCache: true };
+  }
+
+  const existingResolve = inflightAudioUrlResolves.get(videoId);
+  if (existingResolve) {
+    return existingResolve;
+  }
+
+  const resolvePromise = (async () => {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const ytdlp = spawn('yt-dlp', [
+      '-f', 'bestaudio[ext=webm]/bestaudio',
+      '--no-playlist',
+      '--no-warnings',
+      '-g',
+      url,
+    ]);
+
+    let audioUrl = '';
+    let stderr = '';
+
+    ytdlp.stdout.on('data', (chunk) => { audioUrl += chunk.toString(); });
+    ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    const exitCode = await new Promise((resolve, reject) => {
+      ytdlp.once('error', reject);
+      ytdlp.once('close', resolve);
+    });
+
+    audioUrl = audioUrl.trim();
+    if (exitCode !== 0 || !audioUrl) {
+      const err = new Error('Failed to get audio URL');
+      err.details = stderr;
+      throw err;
+    }
+
+    audioUrlCache.set(videoId, {
+      audioUrl,
+      expiresAt: Date.now() + AUDIO_URL_TTL_MS,
+    });
+    pruneAudioUrlCache();
+
+    return { audioUrl, fromCache: false };
+  })().finally(() => {
+    inflightAudioUrlResolves.delete(videoId);
+  });
+
+  inflightAudioUrlResolves.set(videoId, resolvePromise);
+  return resolvePromise;
+}
+
+export function warmYoutubeQueueAhead(queue, currentIndex, count = 4) {
+  if (!Array.isArray(queue) || queue.length === 0) return;
+  const startIndex = Math.max(0, Number(currentIndex ?? -1) + 1);
+  const ids = queue
+    .slice(startIndex, startIndex + count)
+    .filter((track) => track?.service === 'youtube' && track?.id)
+    .map((track) => track.id);
+
+  for (const videoId of ids) {
+    resolveAudioUrl(videoId).catch(() => {
+      // Best-effort warmup only; regular playback path still handles failures.
+    });
+  }
 }
 
 youtubeRouter.get('/search', async (req, res) => {
@@ -69,36 +160,7 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
   }
 
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-
-    // Use yt-dlp to get the best audio URL
-    let ytdlp;
-    try {
-      ytdlp = spawn('yt-dlp', [
-        '-f', 'bestaudio[ext=webm]/bestaudio',
-        '--no-playlist',
-        '--no-warnings',
-        '-g',  // print URL only
-        url,
-      ]);
-    } catch (spawnError) {
-      console.error('yt-dlp not found:', spawnError.message);
-      return res.status(502).json({ error: 'Audio extraction tool not available' });
-    }
-
-    let audioUrl = '';
-    let stderr = '';
-
-    ytdlp.stdout.on('data', (chunk) => { audioUrl += chunk.toString(); });
-    ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-
-    const exitCode = await new Promise((resolve) => ytdlp.on('close', resolve));
-
-    audioUrl = audioUrl.trim();
-    if (exitCode !== 0 || !audioUrl) {
-      console.error('yt-dlp error:', stderr);
-      return res.status(502).json({ error: 'Failed to get audio URL' });
-    }
+    const { audioUrl } = await resolveAudioUrl(videoId);
 
     // Proxy the audio stream from YouTube to the client
     const headers = {};
@@ -136,7 +198,38 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
 
     response.data.pipe(res);
   } catch (err) {
+    if (err?.code === 'ENOENT') {
+      console.error('yt-dlp not found:', err.message);
+      return res.status(502).json({ error: 'Audio extraction tool not available' });
+    }
+    if (err?.details) {
+      console.error('yt-dlp error:', err.details);
+      return res.status(502).json({ error: 'Failed to get audio URL' });
+    }
     console.error('YouTube audio route error:', err.message);
     if (!res.headersSent) res.status(500).json({ error: 'YouTube audio failed' });
+  }
+});
+
+youtubeRouter.get('/resolve/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  if (!/^[a-zA-Z0-9_-]{6,20}$/.test(String(videoId || ''))) {
+    return res.status(400).json({ error: 'Invalid video id' });
+  }
+
+  try {
+    const result = await resolveAudioUrl(videoId);
+    res.json({ ok: true, fromCache: result.fromCache });
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      console.error('yt-dlp not found:', err.message);
+      return res.status(502).json({ error: 'Audio extraction tool not available' });
+    }
+    if (err?.details) {
+      console.error('yt-dlp resolve error:', err.details);
+      return res.status(502).json({ error: 'Failed to resolve audio URL' });
+    }
+    console.error('YouTube resolve route error:', err.message);
+    res.status(500).json({ error: 'YouTube resolve failed' });
   }
 });

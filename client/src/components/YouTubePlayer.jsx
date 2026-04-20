@@ -62,7 +62,16 @@ export default function YouTubePlayer({
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !track || track.service !== 'youtube') return;
+    if (!audio) return;
+
+    if (!track || track.service !== 'youtube') {
+      // Explicitly stop and unload prior media so mobile browsers don't keep audio alive.
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      onPlayStateChange?.(false);
+      return;
+    }
 
     registerActions(audio);
     audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
@@ -120,8 +129,11 @@ export default function YouTubePlayer({
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('error', onError);
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
     };
-  }, [track?.id]);
+  }, [track?.id, track?.service]);
 
   // Some embedded Discord sessions block autoplay with sound until user gesture.
   useEffect(() => {

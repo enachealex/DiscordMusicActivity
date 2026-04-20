@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs/promises';
 import { spotifyRouter, handleSpotifyCallback } from './spotify.js';
-import { youtubeRouter } from './youtube.js';
+import { youtubeRouter, warmYoutubeQueueAhead } from './youtube.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env') });
@@ -124,6 +124,11 @@ const rooms = new Map();
 // Pending DJ-claim requests  (channelId → { claimerId, claimerUsername, timer, claimerSocketId })
 const pendingClaims = new Map();
 
+function warmUpcomingTracks(room) {
+  if (!room || room.currentService !== 'youtube') return;
+  warmYoutubeQueueAhead(room.queue, room.currentIndex, 4);
+}
+
 async function saveQueue(channelId, queue) {
   try {
     const filePath = join(playlistsDir, `${channelId}.json`);
@@ -204,6 +209,7 @@ io.on('connection', async (socket) => {
     }
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   // Only the DJ can skip
@@ -230,6 +236,7 @@ io.on('connection', async (socket) => {
     }
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   // DJ pushes periodic position/state sync to followers
@@ -265,6 +272,7 @@ io.on('connection', async (socket) => {
     }
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   // DJ jumps to a specific track
@@ -277,6 +285,7 @@ io.on('connection', async (socket) => {
     room.isPlaying = true;
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   socket.on('queue:play-track', (track) => {
@@ -296,6 +305,7 @@ io.on('connection', async (socket) => {
     room.syncedAt = Date.now();
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   socket.on('queue:load-playlist', (tracks) => {
@@ -318,6 +328,7 @@ io.on('connection', async (socket) => {
     room.syncedAt = Date.now();
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
   });
 
   // Any user can claim DJ:
@@ -407,6 +418,7 @@ io.on('connection', async (socket) => {
       room.currentIndex += 1;
     }
     io.to(channelId).emit('room:state', { ...room });
+    warmUpcomingTracks(room);
   });
 
   socket.on('disconnect', () => {

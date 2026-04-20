@@ -49,6 +49,7 @@ export default function App() {
   const [claimRequest, setClaimRequest] = useState(null); // { claimerId, claimerUsername, countdown }
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const socketRef = useRef(null);
+  const preloadedYoutubeIdsRef = useRef(new Set());
   const spotifyLoginUrl = useMemo(() => {
     if (!ready || !user) return '';
     const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
@@ -325,6 +326,7 @@ export default function App() {
   const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
   const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
   const activeService = detached ? (detachedService ?? activeRoom?.currentService) : room?.currentService;
+  const isDJ = user?.id === room?.djUserId;
 
   // Ensure each track starts with a fresh timeline in the UI.
   useEffect(() => {
@@ -338,6 +340,27 @@ export default function App() {
     setDuration(0);
   }, [currentTrack?.id, activeService, detached]);
 
+  // Warm the server-side YouTube URL cache for upcoming songs so skip starts faster.
+  useEffect(() => {
+    if (!activeRoom?.queue?.length) return;
+    if (activeService !== 'youtube') return;
+    if (!isDJ && !detached) return;
+
+    const startIndex = Math.max(0, (activeRoom.currentIndex ?? -1) + 1);
+    const preloadCandidates = activeRoom.queue
+      .slice(startIndex, startIndex + 4)
+      .filter((track) => track?.service === 'youtube' && track?.id);
+
+    preloadCandidates.forEach((track) => {
+      if (preloadedYoutubeIdsRef.current.has(track.id)) return;
+      preloadedYoutubeIdsRef.current.add(track.id);
+      fetch(`/api/youtube/resolve/${encodeURIComponent(track.id)}`)
+        .catch(() => {
+          preloadedYoutubeIdsRef.current.delete(track.id);
+        });
+    });
+  }, [activeRoom?.queue, activeRoom?.currentIndex, activeService, isDJ, detached]);
+
   if (!ready || !room) {
     return (
       <div className="loading">
@@ -346,8 +369,6 @@ export default function App() {
       </div>
     );
   }
-
-  const isDJ = user?.id === room.djUserId;
 
   function addTrack(track) {
     if (detached) {
