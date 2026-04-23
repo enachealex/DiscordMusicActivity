@@ -340,6 +340,15 @@ body {
 .search-result-info { flex: 1; min-width: 0; }
 .search-result-info .title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-result-info .artist { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-removed-at {
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .history-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -387,6 +396,22 @@ body {
   color: var(--text);
   border-color: var(--accent);
   background: rgba(88, 101, 242, 0.12);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .history-item .history-more-btn {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+
+  .history-item:hover .history-more-btn,
+  .history-item:focus-within .history-more-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
 }
 
 .playlist-manager {

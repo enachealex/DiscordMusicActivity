@@ -647,7 +647,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               return (
                 <div
                   key={`${track.id}-${track.deletedAt || index}`}
-                  className="search-result-item"
+                  className="search-result-item history-item"
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -684,9 +684,10 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                     <div className="artist">
                       {track.artist || ''}
                       {track.service ? ` • ${track.service === 'spotify' ? 'Spotify' : 'YouTube'}` : ''}
-                      {track.deletedBy ? ` • removed by ${track.deletedBy}` : ''}
-                      {track.deletedAt ? ` • ${formatDeletedTime(track.deletedAt)}` : ''}
                     </div>
+                    {track.deletedAt ? (
+                      <div className="history-removed-at">Removed {formatDeletedTime(track.deletedAt)}</div>
+                    ) : null}
                   </div>
                   <button
                     type="button"
