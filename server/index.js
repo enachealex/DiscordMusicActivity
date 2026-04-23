@@ -135,8 +135,8 @@ const pendingClaims = new Map();
 
 function warmUpcomingTracks(room) {
   if (!room || room.currentService !== 'youtube') return;
-  // Warm all upcoming tracks (queue length - 1 from current position).
-  warmYoutubeQueueAhead(room.queue, room.currentIndex, room.queue.length);
+  // Warm only the next 3 tracks to avoid saturating yt-dlp concurrency slots.
+  warmYoutubeQueueAhead(room.queue, room.currentIndex, 3);
 }
 
 async function saveQueue(channelId, queue) {

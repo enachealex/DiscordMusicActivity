@@ -11,9 +11,35 @@ dotenv.config({ path: join(__dirname, '../.env') });
 export const youtubeRouter = express.Router();
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const AUDIO_URL_TTL_MS = 10 * 60 * 1000;
+const AUDIO_URL_TTL_MS = 55 * 60 * 1000; // YouTube signed URLs last ~6h; 55 min gives safe re-use window
 const audioUrlCache = new Map();
 const inflightAudioUrlResolves = new Map();
+
+// ── yt-dlp concurrency limiter ──────────────────────────────────────────────
+// Prevents hammering YouTube / the server when many tracks are warmed at once.
+const MAX_CONCURRENT_YTDLP = 4;
+let activeYtdlpCount = 0;
+const ytdlpWaitQueue = [];
+
+function acquireYtdlpSlot() {
+  return new Promise((resolve) => {
+    if (activeYtdlpCount < MAX_CONCURRENT_YTDLP) {
+      activeYtdlpCount++;
+      resolve();
+    } else {
+      ytdlpWaitQueue.push(resolve);
+    }
+  });
+}
+
+function releaseYtdlpSlot() {
+  const next = ytdlpWaitQueue.shift();
+  if (next) {
+    next(); // slot transferred — count stays the same
+  } else {
+    activeYtdlpCount--;
+  }
+}
 
 function proxiedThumb(url) {
   if (!url) return '';
@@ -62,40 +88,45 @@ async function resolveAudioUrl(videoId) {
   }
 
   const resolvePromise = (async () => {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const ytdlp = spawn('yt-dlp', [
-      '-f', 'bestaudio[ext=webm]/bestaudio',
-      '--no-playlist',
-      '--no-warnings',
-      '-g',
-      url,
-    ]);
+    await acquireYtdlpSlot();
+    try {
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      const ytdlp = spawn('yt-dlp', [
+        '-f', 'bestaudio[ext=webm]/bestaudio',
+        '--no-playlist',
+        '--no-warnings',
+        '-g',
+        url,
+      ]);
 
-    let audioUrl = '';
-    let stderr = '';
+      let audioUrl = '';
+      let stderr = '';
 
-    ytdlp.stdout.on('data', (chunk) => { audioUrl += chunk.toString(); });
-    ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      ytdlp.stdout.on('data', (chunk) => { audioUrl += chunk.toString(); });
+      ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    const exitCode = await new Promise((resolve, reject) => {
-      ytdlp.once('error', reject);
-      ytdlp.once('close', resolve);
-    });
+      const exitCode = await new Promise((resolve, reject) => {
+        ytdlp.once('error', reject);
+        ytdlp.once('close', resolve);
+      });
 
-    audioUrl = audioUrl.trim();
-    if (exitCode !== 0 || !audioUrl) {
-      const err = new Error('Failed to get audio URL');
-      err.details = stderr;
-      throw err;
+      audioUrl = audioUrl.trim();
+      if (exitCode !== 0 || !audioUrl) {
+        const err = new Error('Failed to get audio URL');
+        err.details = stderr;
+        throw err;
+      }
+
+      audioUrlCache.set(videoId, {
+        audioUrl,
+        expiresAt: Date.now() + AUDIO_URL_TTL_MS,
+      });
+      pruneAudioUrlCache();
+
+      return { audioUrl, fromCache: false };
+    } finally {
+      releaseYtdlpSlot();
     }
-
-    audioUrlCache.set(videoId, {
-      audioUrl,
-      expiresAt: Date.now() + AUDIO_URL_TTL_MS,
-    });
-    pruneAudioUrlCache();
-
-    return { audioUrl, fromCache: false };
   })().finally(() => {
     inflightAudioUrlResolves.delete(videoId);
   });
@@ -197,6 +228,10 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
 
     response.data.pipe(res);
   } catch (err) {
+    // Evict the cached URL if YouTube rejected it — forces a fresh yt-dlp run next request.
+    if (err?.response?.status === 403 || err?.response?.status === 410) {
+      audioUrlCache.delete(videoId);
+    }
     if (err?.code === 'ENOENT') {
       console.error('yt-dlp not found:', err.message);
       return res.status(502).json({ error: 'Audio extraction tool not available' });

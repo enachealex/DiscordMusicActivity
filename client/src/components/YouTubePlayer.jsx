@@ -22,6 +22,7 @@ export default function YouTubePlayer({
 }) {
   const audioRef = useRef(null);
   const syncTimerRef = useRef(null);
+  const retryCountRef = useRef(0);
   const [needsInteraction, setNeedsInteraction] = useState(false);
 
   function registerActions(audio) {
@@ -73,6 +74,7 @@ export default function YouTubePlayer({
       return;
     }
 
+    retryCountRef.current = 0;
     registerActions(audio);
     audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
     audio.load();
@@ -110,7 +112,18 @@ export default function YouTubePlayer({
       onDebugEvent?.({ service: 'youtube', playerState: 'buffering', lastEvent: 'yt:buffering' });
     };
     const onError = () => {
-      onDebugEvent?.({ service: 'youtube', playerState: 'error', lastEvent: `yt:audio-error:${audio.error?.code || 'unknown'}` });
+      const code = audio.error?.code ?? 'unknown';
+      onDebugEvent?.({ service: 'youtube', playerState: 'error', lastEvent: `yt:audio-error:${code}` });
+      // One automatic retry per track — handles stale cached URLs that were evicted server-side.
+      if (retryCountRef.current < 1) {
+        retryCountRef.current++;
+        setTimeout(() => {
+          const a = audioRef.current;
+          if (!a || !track) return;
+          a.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
+          a.load();
+        }, 2500);
+      }
     };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
