@@ -14,6 +14,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env') });
 
 const playlistsDir = join(__dirname, 'playlists');
+const parsedHistoryRetentionDays = Number.parseInt(process.env.HISTORY_RETENTION_DAYS || '7', 10);
+const HISTORY_RETENTION_DAYS = Number.isFinite(parsedHistoryRetentionDays) && parsedHistoryRetentionDays > 0
+  ? parsedHistoryRetentionDays
+  : 7;
+const parsedHistoryMaxEntries = Number.parseInt(process.env.HISTORY_MAX_ENTRIES || '500', 10);
+const HISTORY_MAX_ENTRIES = Number.isFinite(parsedHistoryMaxEntries) && parsedHistoryMaxEntries > 0
+  ? parsedHistoryMaxEntries
+  : 500;
+const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // Ensure playlists directory exists
 try {
@@ -126,7 +135,8 @@ const pendingClaims = new Map();
 
 function warmUpcomingTracks(room) {
   if (!room || room.currentService !== 'youtube') return;
-  warmYoutubeQueueAhead(room.queue, room.currentIndex, 4);
+  // Warm all upcoming tracks (queue length - 1 from current position).
+  warmYoutubeQueueAhead(room.queue, room.currentIndex, room.queue.length);
 }
 
 async function saveQueue(channelId, queue) {
@@ -136,6 +146,55 @@ async function saveQueue(channelId, queue) {
   } catch (err) {
     console.error(`Failed to save queue for channel ${channelId}:`, err);
   }
+}
+
+function pruneDeletedHistory(history) {
+  const cutoff = Date.now() - HISTORY_RETENTION_MS;
+  return (Array.isArray(history) ? history : [])
+    .filter((entry) => Number(entry?.deletedAt || 0) >= cutoff)
+    .slice(-HISTORY_MAX_ENTRIES);
+}
+
+async function saveDeletedHistory(channelId, deletedHistory) {
+  try {
+    const filePath = join(playlistsDir, `${channelId}.history.json`);
+    const pruned = pruneDeletedHistory(deletedHistory);
+    await fs.writeFile(filePath, JSON.stringify(pruned, null, 2));
+  } catch (err) {
+    console.error(`Failed to save deleted history for channel ${channelId}:`, err);
+  }
+}
+
+async function loadDeletedHistory(channelId) {
+  try {
+    const filePath = join(playlistsDir, `${channelId}.history.json`);
+    const data = await fs.readFile(filePath, 'utf8');
+    return pruneDeletedHistory(JSON.parse(data));
+  } catch {
+    return [];
+  }
+}
+
+function pushDeletedHistory(room, track, deletedBy) {
+  if (!track?.id || !track?.title) return;
+  const key = `${track.service || 'youtube'}:${track.id}`;
+  const existing = (room.deletedHistory || []).find((h) => `${h?.service || 'youtube'}:${h?.id || ''}` === key);
+  const entry = {
+    id: track.id,
+    title: track.title,
+    artist: track.artist || '',
+    thumbnail: track.thumbnail || '',
+    service: track.service || 'youtube',
+    addedBy: track.addedBy || '',
+    deletedBy: deletedBy || '',
+    deletedAt: Date.now(),
+    timesDeleted: Number(existing?.timesDeleted || 0) + 1,
+  };
+
+  // Dictionary-style upsert: keep one entry per song key and refresh it as most recent.
+  const deduped = (room.deletedHistory || []).filter((h) => `${h?.service || 'youtube'}:${h?.id || ''}` !== key);
+  deduped.push(entry);
+  room.deletedHistory = pruneDeletedHistory(deduped);
 }
 
 async function loadQueue(channelId) {
@@ -152,6 +211,7 @@ async function loadQueue(channelId) {
 async function getRoom(channelId) {
   if (!rooms.has(channelId)) {
     const queue = await loadQueue(channelId);
+    const deletedHistory = await loadDeletedHistory(channelId);
     rooms.set(channelId, {
       queue,
       currentIndex: queue.length > 0 ? 0 : -1,
@@ -160,6 +220,7 @@ async function getRoom(channelId) {
       currentService: 'youtube',
       position: 0,
       syncedAt: Date.now(),
+      deletedHistory,
     });
   }
   return rooms.get(channelId);
@@ -259,7 +320,8 @@ io.on('connection', async (socket) => {
   // Anyone can remove a track
   socket.on('queue:remove', (index) => {
     if (typeof index !== 'number' || index < 0 || index >= room.queue.length) return;
-    room.queue.splice(index, 1);
+    const [removedTrack] = room.queue.splice(index, 1);
+    pushDeletedHistory(room, removedTrack, String(username || userId));
     if (room.queue.length === 0) {
       room.currentIndex = -1;
       room.isPlaying = false;
@@ -272,7 +334,32 @@ io.on('connection', async (socket) => {
     }
     io.to(channelId).emit('room:state', { ...room });
     saveQueue(channelId, room.queue);
+    saveDeletedHistory(channelId, room.deletedHistory);
     warmUpcomingTracks(room);
+  });
+
+  // Only DJ can clear queue for everyone
+  socket.on('queue:clear', () => {
+    if (userId !== room.djUserId) return;
+    for (const track of room.queue) {
+      pushDeletedHistory(room, track, String(username || userId));
+    }
+    room.queue = [];
+    room.currentIndex = -1;
+    room.isPlaying = false;
+    room.position = 0;
+    room.syncedAt = Date.now();
+    io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
+    saveDeletedHistory(channelId, room.deletedHistory);
+  });
+
+  // Only DJ can clear deleted history for everyone
+  socket.on('history:clear', () => {
+    if (userId !== room.djUserId) return;
+    room.deletedHistory = [];
+    io.to(channelId).emit('room:state', { ...room });
+    saveDeletedHistory(channelId, room.deletedHistory);
   });
 
   // DJ jumps to a specific track

@@ -9,11 +9,12 @@ function thumbSrc(url) {
   return url;
 }
 
-export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, onReorder }) {
+export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, onReorder, onClearQueue }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [dropIndex, setDropIndex] = useState(null);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, index }
   const [playlistDropdown, setPlaylistDropdown] = useState(null); // { x, y, index }
+  const [clearArmed, setClearArmed] = useState(false);
   const [playlists, setPlaylists] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('discord-music-activity-playlists') || '[]');
@@ -24,8 +25,23 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   const pointerDownRef = useRef(null);
   const draggedRef = useRef(false);
   const longPressTimerRef = useRef(null);
+  const clearArmTimerRef = useRef(null);
   const contextMenuRef = useRef(null);
   const playlistDropdownRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (clearArmTimerRef.current) {
+        clearTimeout(clearArmTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (queue.length === 0 && clearArmed) {
+      setClearArmed(false);
+    }
+  }, [queue.length, clearArmed]);
 
   function handleContextMenu(e, index) {
     e.preventDefault();
@@ -184,7 +200,31 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   return (
     <div className="queue-panel" onClick={closeMenu}>
       <div className="queue-header">
-        Queue — {queue.length} track{queue.length !== 1 ? 's' : ''}
+        <span className="queue-header-title">Queue — {queue.length} track{queue.length !== 1 ? 's' : ''}</span>
+        <button
+          className={`queue-clear-btn${clearArmed ? ' armed' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!clearArmed) {
+              setClearArmed(true);
+              if (clearArmTimerRef.current) clearTimeout(clearArmTimerRef.current);
+              clearArmTimerRef.current = setTimeout(() => {
+                setClearArmed(false);
+              }, 2000);
+              return;
+            }
+            if (clearArmTimerRef.current) {
+              clearTimeout(clearArmTimerRef.current);
+              clearArmTimerRef.current = null;
+            }
+            setClearArmed(false);
+            onClearQueue?.();
+          }}
+          disabled={!isDJ || queue.length === 0}
+          title={!isDJ ? 'Only DJ can clear queue' : (clearArmed ? 'Click again to confirm clear' : 'Click to arm clear (2s)')}
+        >
+          {clearArmed ? 'Confirm' : 'Clear'}
+        </button>
       </div>
 
       <div className="queue-list">

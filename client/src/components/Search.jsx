@@ -9,13 +9,15 @@ function thumbSrc(url) {
   return url;
 }
 
-export default function Search({ service, spotifyToken, spotifyRestoring, queue, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyLogout, isDJ }) {
+export default function Search({ service, spotifyToken, spotifyRestoring, queue, deletedHistory, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyLogout, isDJ, canManageHistory, onClearHistory }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
   const [activeTab, setActiveTab] = useState('songs');
+  const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [playlists, setPlaylists] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('discord-music-activity-playlists') || '[]');
@@ -30,6 +32,12 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [pendingNewPlaylistTrack, setPendingNewPlaylistTrack] = useState(null);
   const queuedIds = useMemo(() => new Set((queue || []).map((track) => track.id)), [queue]);
+  const historyItems = useMemo(() => {
+    const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    return (deletedHistory || [])
+      .filter((entry) => Number(entry?.deletedAt || 0) >= cutoff)
+      .sort((a, b) => Number(b.deletedAt || 0) - Number(a.deletedAt || 0));
+  }, [deletedHistory]);
   const activePlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId);
   const playlistCreateHint = pendingNewPlaylistTrack
     ? 'Create a playlist for the selected track.'
@@ -49,7 +57,11 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   }, [playlists]);
 
   useEffect(() => {
-    function handleClickOutside() {
+    function handleClickOutside(event) {
+      const target = event.target;
+      const insideContext = contextMenuRef.current?.contains(target);
+      const insidePlaylist = playlistDropdownRef.current?.contains(target);
+      if (insideContext || insidePlaylist) return;
       if (playlistDropdown || contextMenu) {
         setPlaylistDropdown(null);
         setContextMenu(null);
@@ -70,6 +82,12 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
     }
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setIsMobileLayout(window.innerWidth <= 600);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   useEffect(() => {
@@ -405,8 +423,42 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
     setError('');
   }
 
+  function formatDeletedTime(ts) {
+    const ageSec = Math.max(0, Math.floor((Date.now() - Number(ts || 0)) / 1000));
+    if (ageSec < 60) return 'just now';
+    if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
+    if (ageSec < 86400) return `${Math.floor(ageSec / 3600)}h ago`;
+    return `${Math.floor(ageSec / 86400)}d ago`;
+  }
+
+  function closeMobileSearch() {
+    setShowMobileSearch(false);
+    setPlaylistDropdown(null);
+    setContextMenu(null);
+  }
+
+  function handleClearHistory() {
+    const confirmed = window.confirm('Clear deleted-song history for everyone in this room?');
+    if (!confirmed) return;
+    onClearHistory?.();
+    closeContextMenu();
+  }
+
   return (
-    <div className="search-panel">
+    <div className={`search-panel${isMobileLayout && showMobileSearch ? ' mobile-search-open' : ''}`}>
+      {isMobileLayout && !showMobileSearch ? (
+        <button
+          type="button"
+          className="mobile-search-launch"
+          onClick={() => {
+            setActiveTab('songs');
+            setShowMobileSearch(true);
+          }}
+        >
+          Search Songs
+        </button>
+      ) : (
+        <>
       <form onSubmit={handleSearch} className="search-input-wrapper">
         <div className="search-input-row">
           <div className="search-input-field">
@@ -450,6 +502,26 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           >
             Playlist
           </button>
+          <button
+            type="button"
+            className={`btn-tab${activeTab === 'history' ? ' active' : ''}`}
+            onClick={() => {
+              setActiveTab('history');
+              setSelectedPlaylistId(null);
+              closeContextMenu();
+            }}
+          >
+            History
+          </button>
+          {isMobileLayout && (
+            <button
+              type="button"
+              className="btn-mobile-search-close"
+              onClick={closeMobileSearch}
+            >
+              Close
+            </button>
+          )}
         </div>
       </form>
 
@@ -560,6 +632,88 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
             </div>
           )}
         </div>
+      ) : activeTab === 'history' ? (
+        <>
+        {canManageHistory && (
+          <div className="history-toolbar">
+            <button type="button" className="btn-history-clear" onClick={handleClearHistory}>
+              Clear History
+            </button>
+          </div>
+        )}
+        <div className="search-results">
+          {historyItems.length > 0 ? (
+            historyItems.map((track, index) => {
+              return (
+                <div
+                  key={`${track.id}-${track.deletedAt || index}`}
+                  className="search-result-item"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setContextMenu({
+                      type: 'history-track',
+                      track,
+                      x: e.clientX,
+                      y: e.clientY,
+                    });
+                  }}
+                  onTouchStart={(e) => {
+                    const timer = setTimeout(() => {
+                      const touch = e.touches?.[0];
+                      setContextMenu({
+                        type: 'history-track',
+                        track,
+                        x: touch?.clientX || 0,
+                        y: (touch?.clientY || 0) + 20,
+                      });
+                    }, 500);
+                    longPressTimerRef.current = timer;
+                  }}
+                  onTouchEnd={() => clearTimeout(longPressTimerRef.current)}
+                  onTouchMove={() => clearTimeout(longPressTimerRef.current)}
+                >
+                  {track.thumbnail && <img src={thumbSrc(track.thumbnail)} alt="" />}
+                  <div className="search-result-info">
+                    <div className="title">
+                      {track.title}
+                      {Number(track.timesDeleted || 0) > 1 ? (
+                        <span className="history-repeat-badge">updated x{track.timesDeleted}</span>
+                      ) : null}
+                    </div>
+                    <div className="artist">
+                      {track.artist || ''}
+                      {track.service ? ` • ${track.service === 'spotify' ? 'Spotify' : 'YouTube'}` : ''}
+                      {track.deletedBy ? ` • removed by ${track.deletedBy}` : ''}
+                      {track.deletedAt ? ` • ${formatDeletedTime(track.deletedAt)}` : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="history-more-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setContextMenu({
+                        type: 'history-track',
+                        track,
+                        x: rect.right,
+                        y: rect.bottom + 4,
+                      });
+                    }}
+                    title="More actions"
+                    aria-label="More actions"
+                  >
+                    ⋯
+                  </button>
+                </div>
+              );
+            })
+          ) : (
+            <div className="queue-empty">No deleted songs in the last 7 days.</div>
+          )}
+        </div>
+        </>
       ) : (
         <div className="search-results">
           {results.map((track) => {
@@ -643,7 +797,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
         </div>
       )}
 
-      {contextMenu && (contextMenu.type === 'playlist' || (contextMenu.type === 'song' && activePlaylist)) && (
+      {contextMenu && (contextMenu.type === 'playlist' || (contextMenu.type === 'song' && activePlaylist) || contextMenu.type === 'history-track') && (
         <div
           ref={contextMenuRef}
           className="context-menu"
@@ -697,7 +851,48 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               </button>
             </>
           ) : null}
+          {contextMenu.type === 'history-track' && contextMenu.track ? (
+            <>
+              {isDJ && (
+                <button
+                  onClick={() => {
+                    onPlayTrack(contextMenu.track);
+                    closeContextMenu();
+                  }}
+                >
+                  ▶ Play Now
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  handleAdd(contextMenu.track);
+                  closeContextMenu();
+                }}
+                disabled={queuedIds.has(contextMenu.track.id)}
+              >
+                {queuedIds.has(contextMenu.track.id) ? '✓ Added to Queue' : '➕ Add to Queue'}
+              </button>
+              <button
+                onClick={() => {
+                  if (playlists.length === 0) {
+                    createPlaylistFromSong(contextMenu.track);
+                  } else {
+                    setPlaylistDropdown({
+                      track: contextMenu.track,
+                      x: contextMenu.x,
+                      y: contextMenu.y + 8,
+                    });
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                📂 Add to Playlist
+              </button>
+            </>
+          ) : null}
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function formatTime(secs) {
   const s = Math.floor(secs || 0);
@@ -21,7 +21,25 @@ export default function PlayerControls({
 }) {
   const canControl = isDJ || detached;
   const pct = duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
+  const remaining = duration > 0 ? Math.max(0, duration - progress) : 0;
   const preVolRef = useRef(volume || 0.7);
+  const [showVolumePopup, setShowVolumePopup] = useState(false);
+  const volControlRef = useRef(null);
+
+  useEffect(() => {
+    function handleOutsideClick(e) {
+      if (!volControlRef.current) return;
+      if (!volControlRef.current.contains(e.target)) {
+        setShowVolumePopup(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
 
   function toggleMute() {
     if (volume < 0.01) {
@@ -50,8 +68,6 @@ export default function PlayerControls({
       </div>
 
       <div className="controls-row">
-        <span className="time-label">{currentTrack ? formatTime(progress) : '--:--'}</span>
-
         <div className="playback-btns">
           <button
             className="ctrl-btn ctrl-btn--sm"
@@ -79,21 +95,40 @@ export default function PlayerControls({
           </button>
         </div>
 
-        <span className="time-label">{currentTrack && duration > 0 ? formatTime(duration) : '--:--'}</span>
+        <span className="time-label">{currentTrack && duration > 0 ? `-${formatTime(remaining)}` : '--:--'}</span>
 
-        <div className="vol-control" title={volume < 0.01 ? 'Unmute' : 'Mute'}>
-          <button className="vol-icon-btn" onClick={toggleMute} aria-label={volume < 0.01 ? 'Unmute' : 'Mute'}>
+        <div className={`vol-control${showVolumePopup ? ' open' : ''}`} ref={volControlRef}>
+          <button
+            className="vol-icon-btn"
+            onClick={() => setShowVolumePopup((prev) => !prev)}
+            aria-label="Adjust volume"
+            title="Adjust volume"
+          >
             {volume < 0.05 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
           </button>
-          <input
-            type="range"
-            className="vol-slider"
-            min="0"
-            max="1"
-            step="0.02"
-            value={volume ?? 0.7}
-            onChange={(e) => onVolumeChange?.(parseFloat(e.target.value))}
-          />
+
+          {showVolumePopup && (
+            <div className="vol-popup" onClick={(e) => e.stopPropagation()}>
+              <div className="vol-slider-wrap">
+                <input
+                  type="range"
+                  className="vol-slider-vertical"
+                  min="0"
+                  max="1"
+                  step="0.02"
+                  value={volume ?? 0.7}
+                  onChange={(e) => onVolumeChange?.(parseFloat(e.target.value))}
+                />
+              </div>
+              <button
+                className="vol-mute-mini"
+                onClick={toggleMute}
+                title={volume < 0.01 ? 'Unmute' : 'Mute'}
+              >
+                {volume < 0.01 ? 'Unmute' : 'Mute'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

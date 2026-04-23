@@ -145,7 +145,6 @@ youtubeRouter.get('/search', async (req, res) => {
       service: 'youtube',
     }));
 
-    console.log('[YT search] first title:', results[0]?.title);
     res.json(results);
   } catch (err) {
     console.error('YouTube search error:', err.response?.data);

@@ -48,15 +48,21 @@ export default function App() {
   // DJ-claim request state
   const [claimRequest, setClaimRequest] = useState(null); // { claimerId, claimerUsername, countdown }
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
+  const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
   const socketRef = useRef(null);
   const preloadedYoutubeIdsRef = useRef(new Set());
+  const resolvedServerUrl = useMemo(() => {
+    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalHost) return window.location.origin;
+    return import.meta.env.VITE_SERVER_URL || window.location.origin;
+  }, []);
   const spotifyLoginUrl = useMemo(() => {
     if (!ready || !user) return '';
-    const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
+    const serverOrigin = new URL(resolvedServerUrl).origin;
     const clientOrigin = window.location.origin;
     const effectiveSocketId = socketId || socketRef.current?.id || '';
     return `${serverOrigin}/spotify/login?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(effectiveSocketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
-  }, [ready, user, socketId]);
+  }, [ready, user, socketId, resolvedServerUrl]);
 
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
 
@@ -64,6 +70,7 @@ export default function App() {
     if (!baseRoom) {
       return {
         queue: [],
+        deletedHistory: [],
         currentIndex: -1,
         isPlaying: false,
         currentService: 'youtube',
@@ -74,6 +81,7 @@ export default function App() {
 
     return {
       queue: [...(baseRoom.queue || [])],
+      deletedHistory: [...(baseRoom.deletedHistory || [])],
       currentIndex: typeof baseRoom.currentIndex === 'number' ? baseRoom.currentIndex : -1,
       isPlaying: !!baseRoom.isPlaying,
       currentService: baseRoom.currentService || 'youtube',
@@ -85,7 +93,7 @@ export default function App() {
   // Listen for tokens posted from the Spotify OAuth popup
   useEffect(() => {
     function handleMessage(e) {
-      const serverOrigin = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).origin;
+      const serverOrigin = new URL(resolvedServerUrl).origin;
       if (e.origin !== window.location.origin && e.origin !== serverOrigin) return;
       if (e.data?.type !== 'spotify-auth') return;
       const { access_token, refresh_token, expires_in } = e.data;
@@ -99,7 +107,7 @@ export default function App() {
     }
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [resolvedServerUrl]);
 
   // Pick up Spotify tokens after OAuth redirect, or silently restore from localStorage
   useEffect(() => {
@@ -224,6 +232,13 @@ export default function App() {
     }
   }, [room?.djUserId, user?.id, claimPending]);
 
+  // Track mobile viewport to gate mobile-only UI behavior.
+  useEffect(() => {
+    const onResize = () => setIsMobileLayout(window.innerWidth <= 600);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // Discord init + socket
   useEffect(() => {
     async function init() {
@@ -248,7 +263,7 @@ export default function App() {
           ]);
           // Patch fetch, WebSocket, and XHR so requests to our server
           // are routed through Discord's /.proxy/ path instead of cross-origin.
-          const targetHost = new URL(import.meta.env.VITE_SERVER_URL || window.location.origin).host;
+          const targetHost = new URL(resolvedServerUrl).host;
           patchUrlMappings([{ prefix: '/', target: targetHost }]);
           const { code } = await discordSdk.commands.authorize({
             client_id: DISCORD_CLIENT_ID,
@@ -277,7 +292,7 @@ export default function App() {
       // transparently routed through Discord's /.proxy/ path.
       // Force polling first — it always works through Discord's HTTP proxy
       // even if WebSocket upgrades are blocked by the activity sandbox.
-      const serverUrl = import.meta.env.VITE_SERVER_URL || window.location.origin;
+      const serverUrl = resolvedServerUrl;
       const socket = io(serverUrl, {
         path: '/socket.io',
         transports: ['polling', 'websocket'],
@@ -321,7 +336,7 @@ export default function App() {
     }
     init();
     return () => socketRef.current?.disconnect();
-  }, []);
+  }, [resolvedServerUrl]);
 
   const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
   const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
@@ -346,9 +361,20 @@ export default function App() {
     if (activeService !== 'youtube') return;
     if (!isDJ && !detached) return;
 
+    const activeYoutubeIds = new Set(
+      activeRoom.queue
+        .filter((track) => track?.service === 'youtube' && track?.id)
+        .map((track) => track.id)
+    );
+    for (const id of preloadedYoutubeIdsRef.current) {
+      if (!activeYoutubeIds.has(id)) {
+        preloadedYoutubeIdsRef.current.delete(id);
+      }
+    }
+
     const startIndex = Math.max(0, (activeRoom.currentIndex ?? -1) + 1);
     const preloadCandidates = activeRoom.queue
-      .slice(startIndex, startIndex + 4)
+      .slice(startIndex)
       .filter((track) => track?.service === 'youtube' && track?.id);
 
     preloadCandidates.forEach((track) => {
@@ -491,7 +517,21 @@ export default function App() {
         const roomState = prev ?? cloneRoomState(room);
         if (typeof index !== 'number' || index < 0 || index >= roomState.queue.length) return roomState;
         const queue = [...roomState.queue];
-        queue.splice(index, 1);
+        const [removedTrack] = queue.splice(index, 1);
+        let deletedHistory = roomState.deletedHistory || [];
+        if (removedTrack) {
+          const key = `${removedTrack.service || 'youtube'}:${removedTrack.id}`;
+          const existing = deletedHistory.find((h) => `${h?.service || 'youtube'}:${h?.id || ''}` === key);
+          const updatedEntry = {
+            ...removedTrack,
+            deletedBy: user?.username || 'You',
+            deletedAt: Date.now(),
+            timesDeleted: Number(existing?.timesDeleted || 0) + 1,
+          };
+          deletedHistory = deletedHistory
+            .filter((h) => `${h?.service || 'youtube'}:${h?.id || ''}` !== key)
+            .concat(updatedEntry);
+        }
         let currentIndex = roomState.currentIndex;
         let isPlaying = roomState.isPlaying;
         let position = roomState.position;
@@ -505,7 +545,15 @@ export default function App() {
         } else if (index < currentIndex) {
           currentIndex = Math.max(0, currentIndex - 1);
         }
-        return { ...roomState, queue, currentIndex, isPlaying, position, syncedAt: Date.now() };
+        return {
+          ...roomState,
+          queue,
+          deletedHistory,
+          currentIndex,
+          isPlaying,
+          position,
+          syncedAt: Date.now(),
+        };
       });
       return;
     }
@@ -516,6 +564,10 @@ export default function App() {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
         if (typeof index !== 'number' || index < 0 || index >= roomState.queue.length) return roomState;
+        const nextTrack = roomState.queue[index];
+        if (nextTrack?.service === 'youtube' && nextTrack?.id) {
+          fetch(`/api/youtube/resolve/${encodeURIComponent(nextTrack.id)}`).catch(() => {});
+        }
         return {
           ...roomState,
           currentIndex: index,
@@ -525,6 +577,10 @@ export default function App() {
         };
       });
       return;
+    }
+    const nextTrack = activeRoom?.queue?.[index];
+    if (nextTrack?.service === 'youtube' && nextTrack?.id) {
+      fetch(`/api/youtube/resolve/${encodeURIComponent(nextTrack.id)}`).catch(() => {});
     }
     socketRef.current?.emit('queue:play-now', index);
   }
@@ -554,6 +610,56 @@ export default function App() {
       return;
     }
     socketRef.current?.emit('queue:reorder', { from, to });
+  }
+  function clearQueue() {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        const deletedMap = new Map();
+        for (const item of roomState.deletedHistory || []) {
+          deletedMap.set(`${item?.service || 'youtube'}:${item?.id || ''}`, item);
+        }
+        const now = Date.now();
+        for (const track of roomState.queue) {
+          if (!track?.id) continue;
+          const key = `${track.service || 'youtube'}:${track.id}`;
+          const existing = deletedMap.get(key);
+          const entry = {
+            ...track,
+            deletedBy: user?.username || 'You',
+            deletedAt: now,
+            timesDeleted: Number(existing?.timesDeleted || 0) + 1,
+          };
+          deletedMap.set(key, entry);
+        }
+        const deletedHistory = Array.from(deletedMap.values());
+        return {
+          ...roomState,
+          queue: [],
+          deletedHistory,
+          currentIndex: -1,
+          isPlaying: false,
+          position: 0,
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:clear');
+  }
+  function clearHistory() {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        return {
+          ...roomState,
+          deletedHistory: [],
+          syncedAt: Date.now(),
+        };
+      });
+      return;
+    }
+    socketRef.current?.emit('history:clear');
   }
   function claimDJ() { 
     if (detached) return;
@@ -602,6 +708,14 @@ export default function App() {
             <circle cx="50" cy="50" r="3.5" fill="#18191c"/>
           </svg>
           <h1 className="app-title">Music</h1>
+          <button
+            className={`mobile-service-toggle ${activeService === 'spotify' ? 'spotify' : 'youtube'}`}
+            onClick={() => handleServiceChange(activeService === 'youtube' ? 'spotify' : 'youtube')}
+            disabled={!isDJ && !detached}
+            title={detached ? 'Switch your local service (detached mode)' : (!isDJ ? 'Only the DJ can switch services' : 'Toggle service')}
+          >
+            {activeService === 'youtube' ? '▶ YouTube' : '♪ Spotify'}
+          </button>
           <DJBadge isDJ={isDJ} />
           {!isDJ && (
             <button
@@ -706,6 +820,7 @@ export default function App() {
             onRemove={removeTrack}
             onPlayNow={playNow}
             onReorder={reorderQueue}
+            onClearQueue={clearQueue}
           />
         </div>
 
@@ -716,23 +831,25 @@ export default function App() {
           isDJ={isDJ}
           detached={detached}
           volume={volume}
-          expanded={!showDebug}
+          expanded={isMobileLayout || !showDebug}
           onPlayToggle={handlePlayToggle}
           onSkip={skip}
           onSeek={handleSeek}
           onVolumeChange={handleVolumeChange}
           currentTrack={currentTrack}
         />
-        
-        <button 
-          className="debug-toggle-btn" 
-          onClick={() => setShowDebug(!showDebug)}
-          aria-expanded={showDebug}
-        >
-          {showDebug ? '▲ Hide Debugging ▲' : '▼ Show Debugging ▼'}
-        </button>
 
-        {showDebug && (
+        {!isMobileLayout && (
+          <button
+            className="debug-toggle-btn"
+            onClick={() => setShowDebug(!showDebug)}
+            aria-expanded={showDebug}
+          >
+            {showDebug ? '▲ Hide Debugging ▲' : '▼ Show Debugging ▼'}
+          </button>
+        )}
+
+        {!isMobileLayout && showDebug && (
           <div className="debug-strip" role="status" aria-live="polite">
             <span className="debug-chip">svc: {activeService}</span>
             {activeService === 'youtube' ? (
@@ -759,10 +876,13 @@ export default function App() {
           spotifyToken={spotifyToken?.access_token}
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
+          deletedHistory={activeRoom.deletedHistory || []}
           isDJ={isDJ}
+          canManageHistory={isDJ || detached}
           onAdd={addTrack}
           onPlayTrack={playTrack}
           onLoadPlaylist={loadPlaylist}
+          onClearHistory={clearHistory}
           onSpotifyLogin={spotifyLoginUrl}
           onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
