@@ -135,8 +135,9 @@ const pendingClaims = new Map();
 
 function warmUpcomingTracks(room) {
   if (!room || room.currentService !== 'youtube') return;
-  // Warm only the next 3 tracks to avoid saturating yt-dlp concurrency slots.
-  warmYoutubeQueueAhead(room.queue, room.currentIndex, 3);
+  // Pass currentIndex - 1 so warmYoutubeQueueAhead starts at currentIndex itself,
+  // ensuring the playing track is cached in addition to the next 3.
+  warmYoutubeQueueAhead(room.queue, room.currentIndex - 1, 4);
 }
 
 async function saveQueue(channelId, queue) {
@@ -247,6 +248,9 @@ io.on('connection', async (socket) => {
 
   socket.emit('room:state', { ...room });
   socket.to(channelId).emit('user:joined', { userId, username });
+  // Kick off URL resolution for the current track immediately on connect so
+  // the audio cache is warm before the client requests it.
+  warmUpcomingTracks(room);
 
   // Anyone can add a track
   socket.on('queue:add', (track) => {
