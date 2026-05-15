@@ -253,35 +253,38 @@ export default function App() {
 
       if (discordSdk) {
         try {
-          // Race discordSdk.ready() against a 8-second timeout so the app
-          // never hangs on the loading screen if the handshake fails.
+          // Hard 15-second cap on the ENTIRE Discord handshake (ready + authorize +
+          // token exchange) so a stalled authorize dialog or unreachable server never
+          // leaves the app on the loading screen indefinitely.
           await Promise.race([
-            discordSdk.ready(),
+            (async () => {
+              await discordSdk.ready();
+              // Patch fetch, WebSocket, and XHR so requests to our server
+              // are routed through Discord's /.proxy/ path instead of cross-origin.
+              const targetHost = new URL(resolvedServerUrl).host;
+              patchUrlMappings([{ prefix: '/', target: targetHost }]);
+              const { code } = await discordSdk.commands.authorize({
+                client_id: DISCORD_CLIENT_ID,
+                response_type: 'code',
+                state: '',
+                prompt: 'none',
+                scope: ['identify'],
+              });
+              const tokenRes = await fetch('/api/discord/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code }),
+              });
+              if (!tokenRes.ok) throw new Error('Token exchange failed');
+              const { access_token } = await tokenRes.json();
+              const auth = await discordSdk.commands.authenticate({ access_token });
+              userData = auth.user;
+              channelId = discordSdk.channelId ?? 'dev-channel';
+            })(),
             new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Discord ready timeout')), 8000)
+              setTimeout(() => reject(new Error('Discord init timeout')), 15000)
             ),
           ]);
-          // Patch fetch, WebSocket, and XHR so requests to our server
-          // are routed through Discord's /.proxy/ path instead of cross-origin.
-          const targetHost = new URL(resolvedServerUrl).host;
-          patchUrlMappings([{ prefix: '/', target: targetHost }]);
-          const { code } = await discordSdk.commands.authorize({
-            client_id: DISCORD_CLIENT_ID,
-            response_type: 'code',
-            state: '',
-            prompt: 'none',
-            scope: ['identify'],
-          });
-          const tokenRes = await fetch('/api/discord/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
-          });
-          if (!tokenRes.ok) throw new Error('Token exchange failed');
-          const { access_token } = await tokenRes.json();
-          const auth = await discordSdk.commands.authenticate({ access_token });
-          userData = auth.user;
-          channelId = discordSdk.channelId ?? 'dev-channel';
         } catch (err) {
           console.error('Discord auth error:', err);
         }
@@ -342,6 +345,12 @@ export default function App() {
   const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
   const activeService = detached ? (detachedService ?? activeRoom?.currentService) : room?.currentService;
   const isDJ = user?.id === room?.djUserId;
+  // Next YouTube track to prefetch — browser will start buffering its audio while the
+  // current song plays so the transition feels instant.
+  const nextYoutubeTrack =
+    activeRoom?.queue?.[activeRoom.currentIndex + 1]?.service === 'youtube'
+      ? activeRoom.queue[activeRoom.currentIndex + 1]
+      : null;
 
   // Ensure each track starts with a fresh timeline in the UI.
   useEffect(() => {
@@ -924,6 +933,20 @@ export default function App() {
             <button className="btn-toast-cancel" onClick={cancelClaimRequest} title="Cancel DJ request">×</button>
           </div>
         </div>
+      )}
+
+      {/* Prefetch the next YouTube track's audio while the current song plays.
+          preload="auto" tells the browser to buffer the full file so the switch
+          is near-instant. The key must change when the next track changes so
+          React creates a fresh element (and starts a fresh download). */}
+      {nextYoutubeTrack && activeService === 'youtube' && (
+        <audio
+          key={nextYoutubeTrack.id}
+          src={`/api/youtube/audio/${encodeURIComponent(nextYoutubeTrack.id)}`}
+          preload="auto"
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
       )}
     </div>
   );

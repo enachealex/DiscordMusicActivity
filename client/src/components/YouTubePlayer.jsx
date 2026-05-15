@@ -23,13 +23,61 @@ export default function YouTubePlayer({
   const audioRef = useRef(null);
   const syncTimerRef = useRef(null);
   const retryCountRef = useRef(0);
+  const audioContextRef = useRef(null);
+  const sourceNodeRef = useRef(null);
+  const compressorNodeRef = useRef(null);
+  const outputGainNodeRef = useRef(null);
   const [needsInteraction, setNeedsInteraction] = useState(false);
+
+  function ensureAudioProcessing(audio) {
+    if (!audio || sourceNodeRef.current) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    try {
+      const ctx = audioContextRef.current || new AudioCtx();
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaElementSource(audio);
+      const compressor = ctx.createDynamicsCompressor();
+      const outputGain = ctx.createGain();
+
+      // Gentle loudness smoothing: reduce sudden peaks while keeping tone natural.
+      compressor.threshold.value = -24;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 3;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.22;
+      outputGain.gain.value = 1.05;
+
+      source.connect(compressor);
+      compressor.connect(outputGain);
+      outputGain.connect(ctx.destination);
+
+      sourceNodeRef.current = source;
+      compressorNodeRef.current = compressor;
+      outputGainNodeRef.current = outputGain;
+      onDebugEvent?.({ service: 'youtube', lastEvent: 'yt:dsp-enabled' });
+    } catch {
+      // WebAudio setup can fail in restrictive embeds; fallback to regular element audio.
+    }
+  }
+
+  function resumeAudioProcessingContext() {
+    const ctx = audioContextRef.current;
+    if (ctx?.state === 'suspended') {
+      ctx.resume().catch(() => {
+        // Ignore resume failure; normal playback path still runs.
+      });
+    }
+  }
 
   function registerActions(audio) {
     onPlayerReady?.({
       toggle: () => {
         if (!audio) return;
         if (audio.paused) {
+          resumeAudioProcessingContext();
           audio.play().catch(() => setNeedsInteraction(true));
         } else {
           audio.pause();
@@ -50,6 +98,7 @@ export default function YouTubePlayer({
   function tryPlayWithRecovery() {
     const audio = audioRef.current;
     if (!audio) return;
+    resumeAudioProcessingContext();
     audio.play()
       .then(() => {
         setNeedsInteraction(false);
@@ -75,6 +124,7 @@ export default function YouTubePlayer({
     }
 
     retryCountRef.current = 0;
+    ensureAudioProcessing(audio);
     registerActions(audio);
     audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
     audio.load();
@@ -114,15 +164,16 @@ export default function YouTubePlayer({
     const onError = () => {
       const code = audio.error?.code ?? 'unknown';
       onDebugEvent?.({ service: 'youtube', playerState: 'error', lastEvent: `yt:audio-error:${code}` });
-      // One automatic retry per track — handles stale cached URLs that were evicted server-side.
+      // One automatic retry per track — appends ?fresh=1 to force the server to
+      // evict any stale yt-dlp URL and re-resolve before streaming.
       if (retryCountRef.current < 1) {
         retryCountRef.current++;
         setTimeout(() => {
           const a = audioRef.current;
           if (!a || !track) return;
-          a.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
+          a.src = `/api/youtube/audio/${encodeURIComponent(track.id)}?fresh=1`;
           a.load();
-        }, 2500);
+        }, 500);
       }
     };
 
@@ -152,6 +203,7 @@ export default function YouTubePlayer({
   useEffect(() => {
     if (!needsInteraction) return;
     const unlockAudio = () => {
+      resumeAudioProcessingContext();
       tryPlayWithRecovery();
       setNeedsInteraction(false);
     };
@@ -172,12 +224,31 @@ export default function YouTubePlayer({
       audio.currentTime = Math.max(0, Math.min(audio.duration, expected));
     }
     if (room.isPlaying && audio.paused) {
+      resumeAudioProcessingContext();
       audio.play().catch(() => setNeedsInteraction(true));
     }
     if (!room.isPlaying && !audio.paused) {
       audio.pause();
     }
   }, [room]);
+
+  useEffect(() => {
+    return () => {
+      sourceNodeRef.current?.disconnect();
+      compressorNodeRef.current?.disconnect();
+      outputGainNodeRef.current?.disconnect();
+      sourceNodeRef.current = null;
+      compressorNodeRef.current = null;
+      outputGainNodeRef.current = null;
+      const ctx = audioContextRef.current;
+      audioContextRef.current = null;
+      if (ctx && ctx.state !== 'closed') {
+        ctx.close().catch(() => {
+          // Ignore close errors during teardown.
+        });
+      }
+    };
+  }, []);
 
   // DJ periodic sync ping
   useEffect(() => {

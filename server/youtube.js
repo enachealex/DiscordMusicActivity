@@ -189,6 +189,11 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid video id' });
   }
 
+  // ?fresh=1 forces a new yt-dlp run (used by the client after a playback error).
+  if (req.query.fresh === '1') {
+    audioUrlCache.delete(videoId);
+  }
+
   try {
     const { audioUrl } = await resolveAudioUrl(videoId);
 
@@ -211,7 +216,9 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
     for (const h of forward) {
       if (response.headers[h]) res.setHeader(h, response.headers[h]);
     }
-    res.setHeader('Cache-Control', 'no-store');
+    // Allow browsers to cache the audio response so prefetched tracks are served
+    // instantly from the browser cache on the next request to the same URL.
+    res.setHeader('Cache-Control', 'private, max-age=3600');
 
     response.data.on('error', (err) => {
       if (err.code === 'ERR_STREAM_PREMATURE_CLOSE' || err.message === 'aborted') return;
