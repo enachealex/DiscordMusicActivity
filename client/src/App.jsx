@@ -9,7 +9,7 @@ import Search from './components/Search.jsx';
 import DJBadge from './components/DJBadge.jsx';
 import PlayerControls from './components/PlayerControls.jsx';
 
-const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
 let discordSdk = null;
 try {
