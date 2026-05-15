@@ -15,6 +15,7 @@ export default function SpotifyPlayer({
   isDJ,
   detached,
   spotifyToken,
+  loop,
   onSync,
   onSkip,
   onPlayerReady,
@@ -101,7 +102,11 @@ export default function SpotifyPlayer({
       if ((isDJ || detached)) {
         onSync?.({ position: state.position / 1000, isPlaying: !state.paused });
         if (state.paused && state.position === 0 && state.track_window.previous_tracks.length) {
-          onSkip?.();
+          if (loop === 'track') {
+            player.seek(0).then(() => player.resume()).catch(() => {});
+          } else {
+            onSkip?.();
+          }
         }
       }
     });

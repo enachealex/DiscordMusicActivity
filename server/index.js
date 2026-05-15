@@ -354,6 +354,29 @@ io.on('connection', async (socket) => {
     saveDeletedHistory(channelId, room.deletedHistory);
   });
 
+  // Only DJ can shuffle queue order (Fisher-Yates, keeps current track in place)
+  socket.on('queue:shuffle', () => {
+    if (userId !== room.djUserId) return;
+    if (room.queue.length <= 1) return;
+    const currentTrack = room.queue[room.currentIndex];
+    // Fisher-Yates shuffle
+    for (let i = room.queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = room.queue[i];
+      room.queue[i] = room.queue[j];
+      room.queue[j] = tmp;
+    }
+    // Re-locate the currently playing track so playback continues uninterrupted
+    if (currentTrack) {
+      const newIndex = room.queue.indexOf(currentTrack);
+      room.currentIndex = newIndex >= 0 ? newIndex : 0;
+    }
+    room.syncedAt = Date.now();
+    io.to(channelId).emit('room:state', { ...room });
+    saveQueue(channelId, room.queue);
+    warmUpcomingTracks(room);
+  });
+
   // Only DJ can clear deleted history for everyone
   socket.on('history:clear', () => {
     if (userId !== room.djUserId) return;

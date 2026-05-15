@@ -13,6 +13,10 @@ export default function PlayerControls({
   detached,
   volume,
   expanded,
+  shuffle,
+  loop,
+  onShuffleToggle,
+  onLoopToggle,
   onPlayToggle,
   onSkip,
   onSeek,
@@ -70,6 +74,13 @@ export default function PlayerControls({
       <div className="controls-row">
         <div className="playback-btns">
           <button
+            className={`ctrl-btn ctrl-btn--sm${shuffle ? ' active' : ''}`}
+            onClick={onShuffleToggle}
+            title={shuffle ? 'Shuffle on — click to disable' : 'Shuffle off — click to enable'}
+          >
+            ⇌
+          </button>
+          <button
             className="ctrl-btn ctrl-btn--sm"
             onClick={() => onSeek?.(Math.max(0, progress - 15))}
             disabled={!canControl || !currentTrack}
@@ -92,6 +103,13 @@ export default function PlayerControls({
             title={canControl ? 'Skip to next track' : 'Only the DJ can skip'}
           >
             ⏭
+          </button>
+          <button
+            className={`ctrl-btn ctrl-btn--sm${loop !== 'off' ? ' active' : ''}`}
+            onClick={onLoopToggle}
+            title={loop === 'off' ? 'Loop off — click for loop track' : loop === 'track' ? 'Loop track — click for loop queue' : 'Loop queue — click to disable'}
+          >
+            {loop === 'track' ? '↻¹' : '↻'}
           </button>
         </div>
 

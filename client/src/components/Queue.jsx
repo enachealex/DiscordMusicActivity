@@ -9,7 +9,7 @@ function thumbSrc(url) {
   return url;
 }
 
-export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, onReorder, onClearQueue }) {
+export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, onReorder, onClearQueue, onShuffleQueue }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [dropIndex, setDropIndex] = useState(null);
   const [contextMenu, setContextMenu] = useState(null); // { x, y, index }
@@ -201,7 +201,19 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
     <div className="queue-panel" onClick={closeMenu}>
       <div className="queue-header">
         <span className="queue-header-title">Queue — {queue.length} track{queue.length !== 1 ? 's' : ''}</span>
-        <button
+        <div className="queue-header-actions">
+          <button
+            className="queue-clear-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShuffleQueue?.();
+            }}
+            disabled={!isDJ || queue.length <= 1}
+            title={!isDJ ? 'Only DJ can shuffle queue' : 'Shuffle queue order'}
+          >
+            ⇌ Shuffle
+          </button>
+          <button
           className={`queue-clear-btn${clearArmed ? ' armed' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -225,6 +237,7 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
         >
           {clearArmed ? 'Confirm' : 'Clear'}
         </button>
+        </div>
       </div>
 
       <div className="queue-list">

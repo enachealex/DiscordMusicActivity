@@ -764,6 +764,12 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.queue-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
 .queue-clear-btn {
   border: 1px solid var(--border);
   background: transparent;
@@ -966,6 +972,8 @@ body {
 .ctrl-btn.ctrl-btn--sm { font-size: 11px; padding: 4px 6px; letter-spacing: 0; font-weight: 600; }
 .ctrl-btn:hover:not(:disabled) { background: var(--surface2); }
 .ctrl-btn:disabled { opacity: 0.28; cursor: not-allowed; }
+.ctrl-btn.active { color: var(--accent); }
+.ctrl-btn.active:hover:not(:disabled) { background: rgba(88,101,242,.15); }
 .time-label { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: center; }
 .sync-pill { text-align: center; font-size: 11px; color: var(--text-muted); padding-bottom: 2px; }
 

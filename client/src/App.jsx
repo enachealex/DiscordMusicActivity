@@ -32,6 +32,8 @@ export default function App() {
     () => !!localStorage.getItem('spotify_refresh_token')
   );
   const [localPlaying, setLocalPlaying] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+  const [loop, setLoop] = useState('off'); // 'off' | 'track' | 'queue'
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
@@ -471,6 +473,14 @@ export default function App() {
         if (roomState.queue.length === 0) {
           return { ...roomState, currentIndex: -1, isPlaying: false, position: 0, syncedAt: Date.now() };
         }
+        if (shuffle && roomState.queue.length > 1) {
+          const candidates = [];
+          for (let i = 0; i < roomState.queue.length; i++) {
+            if (i !== roomState.currentIndex) candidates.push(i);
+          }
+          const nextIndex = candidates[Math.floor(Math.random() * candidates.length)];
+          return { ...roomState, currentIndex: nextIndex, position: 0, syncedAt: Date.now(), isPlaying: true };
+        }
         if (roomState.currentIndex < roomState.queue.length - 1) {
           return {
             ...roomState,
@@ -480,17 +490,49 @@ export default function App() {
             isPlaying: true,
           };
         }
-        return {
-          ...roomState,
-          currentIndex: 0,
-          isPlaying: true,
-          position: 0,
-          syncedAt: Date.now(),
-        };
+        if (loop !== 'off') {
+          return { ...roomState, currentIndex: 0, isPlaying: true, position: 0, syncedAt: Date.now() };
+        }
+        // loop is off, at end of queue → stop
+        return { ...roomState, isPlaying: false, position: 0, syncedAt: Date.now() };
       });
       return;
     }
+    // DJ path
+    if (shuffle && room.queue.length > 1) {
+      const candidates = [];
+      for (let i = 0; i < room.queue.length; i++) {
+        if (i !== room.currentIndex) candidates.push(i);
+      }
+      const randomIdx = candidates[Math.floor(Math.random() * candidates.length)];
+      socketRef.current?.emit('queue:play-now', randomIdx);
+      return;
+    }
+    if (loop === 'off' && room.queue.length > 0 && room.currentIndex >= room.queue.length - 1) {
+      // At end of queue and loop is off → stop playback
+      socketRef.current?.emit('player:sync', { position: 0, isPlaying: false });
+      return;
+    }
     socketRef.current?.emit('queue:skip');
+  }
+
+  function shuffleQueue() {
+    if (detached) {
+      setDetachedRoom((prev) => {
+        const roomState = prev ?? cloneRoomState(room);
+        if (roomState.queue.length <= 1) return roomState;
+        const currentTrack = roomState.queue[roomState.currentIndex];
+        const q = [...roomState.queue];
+        for (let i = q.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [q[i], q[j]] = [q[j], q[i]];
+        }
+        const newIndex = currentTrack ? q.indexOf(currentTrack) : 0;
+        return { ...roomState, queue: q, currentIndex: newIndex >= 0 ? newIndex : 0, syncedAt: Date.now() };
+      });
+      return;
+    }
+    socketRef.current?.emit('queue:shuffle');
   }
 
   function syncPlayer(data) {
@@ -770,6 +812,7 @@ export default function App() {
               detached={detached}
               onSync={syncPlayer}
               onSkip={skip}
+              loop={loop}
               onPlayerReady={handlePlayerReady}
               onPlayStateChange={setLocalPlaying}
               onDebugEvent={handleDebugEvent}
@@ -783,6 +826,7 @@ export default function App() {
               spotifyToken={spotifyToken}
               onSync={syncPlayer}
               onSkip={skip}
+              loop={loop}
               onPlayerReady={handlePlayerReady}
               onPlayStateChange={setLocalPlaying}
               onDebugEvent={handleDebugEvent}
@@ -830,6 +874,7 @@ export default function App() {
             onPlayNow={playNow}
             onReorder={reorderQueue}
             onClearQueue={clearQueue}
+            onShuffleQueue={shuffleQueue}
           />
         </div>
 
@@ -841,6 +886,10 @@ export default function App() {
           detached={detached}
           volume={volume}
           expanded={isMobileLayout || !showDebug}
+          shuffle={shuffle}
+          loop={loop}
+          onShuffleToggle={() => setShuffle((s) => !s)}
+          onLoopToggle={() => setLoop((l) => l === 'off' ? 'track' : l === 'track' ? 'queue' : 'off')}
           onPlayToggle={handlePlayToggle}
           onSkip={skip}
           onSeek={handleSeek}

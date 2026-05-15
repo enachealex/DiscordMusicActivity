@@ -1,0 +1,12 @@
+discordmusic.thejumpvault.com {
+  encode gzip
+
+  # Keep websocket support for Socket.IO and Discord activity sync.
+  reverse_proxy 127.0.0.1:3001
+
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options SAMEORIGIN
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}

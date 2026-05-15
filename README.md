@@ -38,3 +38,11 @@ curl "http://localhost:3001/youtube/search?q=test"
 ```
 
 If this endpoint is unreachable, start the server (`npm run dev --prefix server`) and try again.
+
+## Deployment Prep (DuckDNS)
+
+DuckDNS + HTTPS prep assets are available in:
+
+- `deployment/duckdns/README.md`
+- `deployment/duckdns/duckdns-update.sh`
+- `deployment/duckdns/Caddyfile.example`

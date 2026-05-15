@@ -14,6 +14,7 @@ export default function YouTubePlayer({
   room,
   isDJ,
   detached,
+  loop,
   onSync,
   onSkip,
   onPlayerReady,
@@ -156,6 +157,11 @@ export default function YouTubePlayer({
     };
     const onEnded = () => {
       onDebugEvent?.({ service: 'youtube', playerState: 'ended', lastEvent: 'yt:ended' });
+      if (loop === 'track') {
+        audio.currentTime = 0;
+        audio.play().catch(() => setNeedsInteraction(true));
+        return;
+      }
       if (isDJ || detached) onSkip?.();
     };
     const onWaiting = () => {
