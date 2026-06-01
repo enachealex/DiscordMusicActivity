@@ -133,6 +133,13 @@ const rooms = new Map();
 // Pending DJ-claim requests  (channelId → { claimerId, claimerUsername, timer, claimerSocketId })
 const pendingClaims = new Map();
 
+// Ephemeral rooms (web "solo" sessions and "Listen Together" rooms) are kept only in
+// memory: they skip disk persistence and are deleted when the last socket leaves. Discord
+// voice-channel rooms use numeric snowflake keys and stay persistent as before.
+function isEphemeralRoom(channelId) {
+  return channelId.startsWith('solo:') || channelId.startsWith('lt:');
+}
+
 function warmUpcomingTracks(room) {
   if (!room || room.currentService !== 'youtube') return;
   // Pass currentIndex - 1 so warmYoutubeQueueAhead starts at currentIndex itself,
@@ -141,6 +148,7 @@ function warmUpcomingTracks(room) {
 }
 
 async function saveQueue(channelId, queue) {
+  if (isEphemeralRoom(channelId)) return;
   try {
     const filePath = join(playlistsDir, `${channelId}.json`);
     await fs.writeFile(filePath, JSON.stringify(queue, null, 2));
@@ -157,6 +165,7 @@ function pruneDeletedHistory(history) {
 }
 
 async function saveDeletedHistory(channelId, deletedHistory) {
+  if (isEphemeralRoom(channelId)) return;
   try {
     const filePath = join(playlistsDir, `${channelId}.history.json`);
     const pruned = pruneDeletedHistory(deletedHistory);
@@ -167,6 +176,7 @@ async function saveDeletedHistory(channelId, deletedHistory) {
 }
 
 async function loadDeletedHistory(channelId) {
+  if (isEphemeralRoom(channelId)) return [];
   try {
     const filePath = join(playlistsDir, `${channelId}.history.json`);
     const data = await fs.readFile(filePath, 'utf8');
@@ -199,6 +209,7 @@ function pushDeletedHistory(room, track, deletedBy) {
 }
 
 async function loadQueue(channelId) {
+  if (isEphemeralRoom(channelId)) return [];
   try {
     const filePath = join(playlistsDir, `${channelId}.json`);
     const data = await fs.readFile(filePath, 'utf8');
@@ -550,7 +561,41 @@ io.on('connection', async (socket) => {
       }
       // If room is empty, keep djUserId so the same person reclaims it on rejoin
     }
+
+    // Ephemeral rooms (web solo / Listen Together) are discarded when the last
+    // person leaves so playback state never carries over to a future session.
+    const remaining = io.sockets.adapter.rooms.get(channelId)?.size ?? 0;
+    if (remaining === 0 && isEphemeralRoom(channelId)) {
+      rooms.delete(channelId);
+      const pc = pendingClaims.get(channelId);
+      if (pc) {
+        clearTimeout(pc.timer);
+        pendingClaims.delete(channelId);
+      }
+    }
   });
+});
+
+// Create a shareable "Listen Together" room. Server-side generation guarantees the
+// code is unique among live rooms. Reachable as POST /api/rooms via the /api rewrite.
+function generateRoomCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+  } while (rooms.has(`lt:${code}`));
+  return code;
+}
+
+app.post('/rooms', async (_req, res) => {
+  const code = generateRoomCode();
+  await getRoom(`lt:${code}`); // reserve immediately so a concurrent POST can't collide
+  res.json({ code });
+});
+
+// Health check — used by uptime monitors and the Cloudflare Tunnel health probe
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), rooms: rooms.size });
 });
 
 // Serve React production build (client/dist) for Discord Activity

@@ -8,6 +8,7 @@ import Queue from './components/Queue.jsx';
 import Search from './components/Search.jsx';
 import DJBadge from './components/DJBadge.jsx';
 import PlayerControls from './components/PlayerControls.jsx';
+import ListenTogether from './components/ListenTogether.jsx';
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
@@ -18,6 +19,18 @@ try {
   console.warn('Discord SDK unavailable:', e.message);
 }
 
+// True when running on the plain website rather than embedded in Discord.
+const isWebMode = !discordSdk;
+
+// Parse a "Listen Together" room code from the URL: /room/CODE or ?room=CODE.
+// Returns the uppercased code, or null for a normal (solo) web visit.
+function getRoomCodeFromUrl() {
+  const m = window.location.pathname.match(/^\/room\/([A-Z0-9]{4,8})$/i);
+  if (m) return m[1].toUpperCase();
+  const q = new URLSearchParams(window.location.search).get('room');
+  return q ? q.toUpperCase() : null;
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
@@ -25,6 +38,8 @@ export default function App() {
   const [detached, setDetached] = useState(false);
   const [detachedService, setDetachedService] = useState(null);
   const [detachedRoom, setDetachedRoom] = useState(null);
+  // Listen Together: the room code this web session is part of (null = solo / Discord).
+  const [roomCode, setRoomCode] = useState(() => (isWebMode ? getRoomCodeFromUrl() : null));
   const [showDebug, setShowDebug] = useState(false);
   const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
@@ -125,7 +140,10 @@ export default function App() {
         expires_at: Date.now() + expiresIn * 1000,
       });
       setSpotifyRestoring(false);
-      window.history.replaceState({}, '', '/');
+      // Strip the OAuth query params but keep a /room/CODE path intact so a
+      // Listen Together session survives the Spotify login round-trip.
+      const cleanPath = getRoomCodeFromUrl() ? window.location.pathname : '/';
+      window.history.replaceState({}, '', cleanPath);
     } else {
       // No fresh OAuth — try to silently restore a previous session
       const storedRt = localStorage.getItem('spotify_refresh_token');
@@ -251,7 +269,11 @@ export default function App() {
         localStorage.setItem('dev-user-id', stableDevId);
       }
       let userData = { id: stableDevId, username: 'Dev User' };
-      let channelId = 'dev-channel';
+      // Web isolation: each visitor gets a private "solo:" room by default. A "Listen
+      // Together" link (/room/CODE) joins the shared "lt:" room instead. Discord sets
+      // channelId from the voice channel below.
+      const urlRoomCode = isWebMode ? getRoomCodeFromUrl() : null;
+      let channelId = urlRoomCode ? `lt:${urlRoomCode}` : `solo:${stableDevId}`;
 
       if (discordSdk) {
         try {
@@ -281,7 +303,9 @@ export default function App() {
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;
-              channelId = discordSdk.channelId ?? 'dev-channel';
+              // Fall back to an isolated solo room (not a shared one) if the voice
+              // channel id is somehow missing, so a broken embed never leaks state.
+              channelId = discordSdk.channelId ?? `solo:${stableDevId}`;
             })(),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Discord init timeout')), 15000)
@@ -778,22 +802,26 @@ export default function App() {
               Claim DJ
             </button>
           )}
-          <button
-            className={`detach-btn ${detached ? 'active' : ''}`}
-            onClick={() => {
-              if (detached) {
-                setDetached(false);
-                setDetachedService(null);
-                setDetachedRoom(null);
-              } else {
-                setDetachedRoom(cloneRoomState(room));
-                setLocalPlaying(false);
-                setDetached(true);
-              }
-            }}
-          >
-            {detached ? '← Rejoin' : 'Detach'}
-          </button>
+          {isWebMode ? (
+            <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
+          ) : (
+            <button
+              className={`detach-btn ${detached ? 'active' : ''}`}
+              onClick={() => {
+                if (detached) {
+                  setDetached(false);
+                  setDetachedService(null);
+                  setDetachedRoom(null);
+                } else {
+                  setDetachedRoom(cloneRoomState(room));
+                  setLocalPlaying(false);
+                  setDetached(true);
+                }
+              }}
+            >
+              {detached ? '← Rejoin' : 'Detach'}
+            </button>
+          )}
         </header>
 
         <ServiceSelector
