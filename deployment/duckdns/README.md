@@ -1,5 +1,10 @@
 # DuckDNS Deployment Prep
 
+> **⚠️ Not the live setup.** Production does NOT use Caddy + DuckDNS. It runs behind a
+> **Cloudflare Tunnel** (`cloudflared`). For the real architecture and how to recover from
+> Cloudflare Error 1033 / HTTP 530, see [`../README.md`](../README.md). This folder is kept
+> only as a reference for the alternative Caddy/DuckDNS approach.
+
 This folder contains a ready-to-run checklist and templates for hosting DiscordMusicActivity with:
 - DuckDNS dynamic DNS
 - Caddy reverse proxy + HTTPS
@@ -10,6 +15,8 @@ This folder contains a ready-to-run checklist and templates for hosting DiscordM
 - App server is running on `http://127.0.0.1:3001`
 - Linux host has `pm2` and Node installed
 - Router supports port forwarding
+
+---
 
 ## 1) DuckDNS Variables
 
@@ -53,21 +60,50 @@ sudo systemctl restart caddy
 sudo systemctl status caddy
 ```
 
-## 5) Keep App Process Alive (PM2)
+## 5) Keep App Process Alive (PM2 with ecosystem config)
+
+Use the `ecosystem.config.cjs` in the project root — it sets crash recovery, memory limits, and log rotation automatically:
 
 ```bash
-pm2 start server/index.js --name discord-music --cwd ~/apps/DiscordMusicActivity
+# Create logs directory first
+mkdir -p ~/apps/DiscordMusicActivity/logs
+
+# Start with ecosystem config
+cd ~/apps/DiscordMusicActivity
+pm2 start ecosystem.config.cjs
+
+# Save process list and enable boot startup
 pm2 save
 pm2 startup
+# Run the command PM2 prints, then:
+pm2 save
 ```
 
-Run the command PM2 prints, then `pm2 save` again.
+**If you previously started PM2 without the ecosystem config, delete the old process first:**
+```bash
+pm2 delete discord-music
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+Key settings in the ecosystem config:
+- Auto-restarts on crash with a 2 s cooldown
+- Restarts if memory exceeds 512 MB (guards against leaks)
+- Daily restart at 4 AM (clears any slow drift)
+- Logs written to `logs/out.log` and `logs/error.log`
 
 ## 6) Verification
 
 ```bash
-curl -I http://127.0.0.1:3001
-curl -I https://discordmusic.thejumpvault.com
+# Local server health
+curl http://127.0.0.1:3001/health
+
+# Through Caddy / Cloudflare
+curl https://discordmusic.thejumpvault.com/health
+
+# PM2 status
+pm2 status
+pm2 logs discord-music --lines 50
 ```
 
 ## 7) OAuth / App Mapping Targets
@@ -87,3 +123,11 @@ Rebuild client and restart app after `.env` updates:
 npm run build --prefix client
 pm2 restart discord-music
 ```
+
+## 8) Optional: External uptime monitor
+
+Use a free service like UptimeRobot or Better Uptime to ping `/health` every 1 minute.
+This catches outages before users notice and gives you an alert so you can restart manually if PM2 doesn't recover.
+
+Monitor URL: `https://discordmusic.thejumpvault.com/health`
+Expected response: HTTP 200 with `{"status":"ok",...}`
