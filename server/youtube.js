@@ -154,9 +154,69 @@ export function warmYoutubeQueueAhead(queue, currentIndex, count = 4) {
   }
 }
 
+// Pull a video id out of any common YouTube URL form. Returns null for non-URLs
+// (plain keyword searches) so callers fall through to the normal search path.
+//   https://www.youtube.com/watch?v=ID   /  &v=ID
+//   https://youtu.be/ID
+//   https://www.youtube.com/shorts/ID  /  /embed/ID  /  /live/ID
+//   https://music.youtube.com/watch?v=ID
+function extractYouTubeVideoId(input) {
+  const text = String(input || '').trim();
+  if (!/youtu\.?be/i.test(text)) return null;
+  let url;
+  try {
+    url = new URL(text.startsWith('http') ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, '');
+  let id = null;
+  if (host === 'youtu.be') {
+    id = url.pathname.split('/')[1];
+  } else if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+    id = url.searchParams.get('v');
+    if (!id) {
+      const m = /^\/(?:shorts|embed|live|v)\/([^/?#]+)/.exec(url.pathname);
+      if (m) id = m[1];
+    }
+  }
+  return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+}
+
+// Look up a single video by id via the YouTube Data API and shape it like a
+// search result. Used when the user pastes a YouTube URL into the search bar.
+async function lookupYouTubeVideo(videoId) {
+  const { data } = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+    params: { part: 'snippet', id: videoId, key: YOUTUBE_API_KEY },
+  });
+  const item = data.items?.[0];
+  if (!item) return null;
+  return {
+    id: videoId,
+    title: decodeHtmlEntities(item.snippet.title),
+    artist: decodeHtmlEntities(item.snippet.channelTitle),
+    thumbnail: proxiedThumb(
+      item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url
+    ),
+    service: 'youtube',
+  };
+}
+
 youtubeRouter.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Query required' });
+
+  // If the query is a YouTube URL, resolve that exact video instead of searching.
+  const pastedVideoId = extractYouTubeVideoId(q);
+  if (pastedVideoId) {
+    try {
+      const video = await lookupYouTubeVideo(pastedVideoId);
+      return res.json(video ? [video] : []);
+    } catch (err) {
+      console.error('YouTube video lookup error:', err.response?.data || err.message);
+      return res.status(500).json({ error: 'YouTube lookup failed' });
+    }
+  }
 
   try {
     const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', {

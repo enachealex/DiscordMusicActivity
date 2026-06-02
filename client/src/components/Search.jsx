@@ -453,7 +453,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           <div className="search-input-field">
             <input
               className="search-input"
-              placeholder={`Search ${service === 'youtube' ? 'YouTube' : 'Spotify'}…`}
+              placeholder={service === 'youtube' ? 'Search YouTube or paste a link…' : 'Search Spotify…'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
