@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { loadPlaylists, savePlaylists, subscribePlaylists } from '../playlistStore';
 
 function thumbSrc(url) {
   if (!url) return '';
@@ -15,13 +16,7 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   const [contextMenu, setContextMenu] = useState(null); // { x, y, index }
   const [playlistDropdown, setPlaylistDropdown] = useState(null); // { x, y, index }
   const [clearArmed, setClearArmed] = useState(false);
-  const [playlists, setPlaylists] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('discord-music-activity-playlists') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [playlists, setPlaylists] = useState(loadPlaylists);
   const pointerDownRef = useRef(null);
   const draggedRef = useRef(false);
   const longPressTimerRef = useRef(null);
@@ -91,18 +86,7 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
     return () => document.removeEventListener('click', handleClickOutside);
   }, [contextMenu, playlistDropdown]);
 
-  useEffect(() => {
-    function handleStorage(event) {
-      if (event.key !== 'discord-music-activity-playlists') return;
-      try {
-        setPlaylists(JSON.parse(event.newValue || '[]'));
-      } catch {
-        // ignore invalid storage values
-      }
-    }
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  useEffect(() => subscribePlaylists(setPlaylists), []);
 
   function handleDragStart(e, index) {
     draggedRef.current = true;
@@ -142,12 +126,8 @@ export default function Queue({ queue, currentIndex, isDJ, onRemove, onPlayNow, 
   }
 
   function persistPlaylists(nextPlaylists) {
-    try {
-      localStorage.setItem('discord-music-activity-playlists', JSON.stringify(nextPlaylists));
-      setPlaylists(nextPlaylists);
-    } catch {
-      // ignore localStorage failure
-    }
+    setPlaylists(nextPlaylists);
+    savePlaylists(nextPlaylists);
   }
 
   function addTrackToPlaylist(track, playlistId) {

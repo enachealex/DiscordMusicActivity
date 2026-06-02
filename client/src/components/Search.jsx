@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { loadPlaylists, savePlaylists, subscribePlaylists } from '../playlistStore';
 
 function thumbSrc(url) {
   if (!url) return '';
@@ -18,13 +19,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const [activeTab, setActiveTab] = useState('songs');
   const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
-  const [playlists, setPlaylists] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('discord-music-activity-playlists') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [playlists, setPlaylists] = useState(loadPlaylists);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [playlistDropdown, setPlaylistDropdown] = useState(null); // { trackId, x, y }
   const [contextMenu, setContextMenu] = useState(null);
@@ -48,13 +43,13 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const contextMenuRef = useRef(null);
   const playlistDropdownRef = useRef(null);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('discord-music-activity-playlists', JSON.stringify(playlists));
-    } catch {
-      // ignore localStorage failure
-    }
-  }, [playlists]);
+  function persistPlaylists(updater) {
+    setPlaylists((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      savePlaylists(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -71,18 +66,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
     return () => document.removeEventListener('click', handleClickOutside);
   }, [playlistDropdown, contextMenu]);
 
-  useEffect(() => {
-    function handleStorage(event) {
-      if (event.key !== 'discord-music-activity-playlists') return;
-      try {
-        setPlaylists(JSON.parse(event.newValue || '[]'));
-      } catch {
-        // ignore invalid storage values
-      }
-    }
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  useEffect(() => subscribePlaylists(setPlaylists), []);
 
   useEffect(() => {
     const onResize = () => setIsMobileLayout(window.innerWidth <= 600);
@@ -253,7 +237,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
         ? [{ ...pendingNewPlaylistTrack }]
         : queue.map((track) => ({ ...track })),
     };
-    setPlaylists((prev) => [...prev, newPlaylist]);
+    persistPlaylists((prev) => [...prev, newPlaylist]);
     setSelectedPlaylistId(id);
     setActiveTab('playlist');
     setShowNewPlaylistInput(false);
@@ -348,7 +332,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   function deleteSelectedPlaylist() {
     if (contextMenu?.type !== 'playlist' || !contextMenu.playlist) return;
     const playlistId = contextMenu.playlist.id;
-    setPlaylists((prev) => prev.filter((playlist) => playlist.id !== playlistId));
+    persistPlaylists((prev) => prev.filter((playlist) => playlist.id !== playlistId));
     setSelectedPlaylistId((prev) => (prev === playlistId ? null : prev));
     closeContextMenu();
   }
@@ -366,7 +350,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   function deleteSongFromPlaylist(songIndex) {
     if (!activePlaylist) return;
     const updatedTracks = activePlaylist.tracks.filter((_, index) => index !== songIndex);
-    setPlaylists((prev) =>
+    persistPlaylists((prev) =>
       prev.map((playlist) =>
         playlist.id === selectedPlaylistId
           ? { ...playlist, tracks: updatedTracks }
@@ -377,7 +361,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   }
 
   function addSongToPlaylist(track, playlistId) {
-    setPlaylists((prev) =>
+    persistPlaylists((prev) =>
       prev.map((playlist) =>
         playlist.id === playlistId
           ? { ...playlist, tracks: [...playlist.tracks, track] }
@@ -397,6 +381,11 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
     setLoading(true);
     setResults([]);
     setError('');
+    // A search always shows results, which live on the Songs tab — jump there so the
+    // user isn't left staring at the Playlist/History tab wondering where results went.
+    setActiveTab('songs');
+    setSelectedPlaylistId(null);
+    closeContextMenu();
     try {
       const url =
         service === 'youtube'

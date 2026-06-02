@@ -47,9 +47,8 @@ export default function App() {
   // The resolved "home" room key for this session (web solo: / Discord discord:<channel>).
   const [defaultChannelId, setDefaultChannelId] = useState(null);
   // Discord-only: a Listen Together party code this user has joined in-place (null = none).
-  // Only available when not sharing a voice channel with other people.
+  // Any Discord user (solo, voice channel, or group) can join/leave a party by code.
   const [discordPartyCode, setDiscordPartyCode] = useState(null);
-  const [canUseDiscordParty, setCanUseDiscordParty] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
@@ -346,16 +345,6 @@ export default function App() {
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;
-              // Discord users may join a Listen Together party by code ONLY when they
-              // aren't sharing a voice channel with other people (i.e. doing the activity
-              // solo with the bot). Count connected participants to decide.
-              try {
-                const res = await discordSdk.commands.getInstanceConnectedParticipants();
-                const count = res?.participants?.length ?? 0;
-                if (count <= 1) setCanUseDiscordParty(true);
-              } catch {
-                // If we can't read participants, default to NOT offering party join.
-              }
             })(),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Discord init timeout')), 15000)
@@ -858,18 +847,16 @@ export default function App() {
             <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
           ) : (
             <>
-              {(canUseDiscordParty || discordPartyCode) && (
-                <DiscordParty
-                  partyCode={discordPartyCode}
-                  onJoin={(code) => {
-                    setDetached(false);
-                    setDetachedService(null);
-                    setDetachedRoom(null);
-                    setDiscordPartyCode(code);
-                  }}
-                  onLeave={() => setDiscordPartyCode(null)}
-                />
-              )}
+              <DiscordParty
+                partyCode={discordPartyCode}
+                onJoin={(code) => {
+                  setDetached(false);
+                  setDetachedService(null);
+                  setDetachedRoom(null);
+                  setDiscordPartyCode(code);
+                }}
+                onLeave={() => setDiscordPartyCode(null)}
+              />
               {!discordPartyCode && (
                 <button
                   className={`detach-btn ${detached ? 'active' : ''}`}

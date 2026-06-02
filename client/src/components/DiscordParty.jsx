@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import './DiscordParty.css';
 
-// Discord-only "Listen Together" join/leave control. Only rendered when the user is
-// doing the activity solo with the bot (not sharing a voice channel with others), so
-// joining a party never pulls people out of a shared voice session. Switching rooms
-// happens via an in-place socket reconnect (Discord can't navigate to /room/CODE).
+// Discord-only "Listen Together" join/leave control. Any Discord user — solo with the
+// bot, in a voice channel, or in a group — can enter a code to join a shared party, and
+// leave to return to their own room. Switching rooms happens via an in-place socket
+// reconnect (Discord can't navigate to /room/CODE the way the web client does).
 export default function DiscordParty({ partyCode, onJoin, onLeave }) {
   const [open, setOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
