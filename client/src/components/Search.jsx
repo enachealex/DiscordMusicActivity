@@ -599,6 +599,19 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                       <div className="artist">{track.artist}</div>
                     </div>
                     <div className="playlist-item-detail">{track.service === 'spotify' ? 'Spotify' : 'YouTube'}</div>
+                    <button
+                      type="button"
+                      className="playlist-song-menu-btn"
+                      title="Track options"
+                      aria-label="Track options"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setContextMenu({ x: rect.left, y: rect.bottom + 4, type: 'song', songIndex: index });
+                      }}
+                    >
+                      ⋮
+                    </button>
                   </div>
                 ))
               ) : (

@@ -22,22 +22,24 @@ body {
   height: 100vh;
   overflow: hidden;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
 }
 
-#root { width: 100%; max-width: 760px; height: min(500px, 100vh); }
+#root { width: 100%; max-width: 960px; height: min(640px, 100vh); }
 
 /* ── App shell: two-column layout ─────── */
 .app {
   display: flex;
   flex-direction: row;
-  height: min(500px, 100vh);
-  max-width: 760px;
+  height: min(640px, 100vh);
+  max-width: 960px;
   width: 100%;
   margin: 0 auto;
   background: var(--bg);
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 /* Web version gets a roomier desktop layout than the fixed Discord panel.
@@ -90,7 +92,10 @@ body.web-mode .app-left { width: 500px; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.app-title { font-size: 14px; font-weight: 700; flex: 1; }
+.app-title-text { font-size: 14px; font-weight: 700; margin: 0; white-space: nowrap; }
+/* Spacer pushes the right-hand header controls to the far edge while keeping the
+   "Add to Discord" button sitting next to the title. */
+.app-header-spacer { flex: 1; }
 
 .mobile-service-toggle {
   display: none;
@@ -642,6 +647,23 @@ body.web-mode .app-left { width: 500px; }
   border-radius: 999px;
   padding: 3px 7px;
 }
+.playlist-song-menu-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.playlist-song-menu-btn:hover { background: var(--surface2); color: var(--text); }
 .playlist-list {
   display: flex;
   flex-direction: column;
