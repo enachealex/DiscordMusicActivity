@@ -40,6 +40,13 @@ body {
   overflow: hidden;
 }
 
+/* Web version gets a roomier desktop layout than the fixed Discord panel.
+   Capped so it stays comfortable on large monitors; the mobile media query
+   below still collapses everything to a single full-width column. */
+body.web-mode #root { max-width: 1100px; height: min(720px, 100vh); }
+body.web-mode .app { max-width: 1100px; height: min(720px, 100vh); }
+body.web-mode .app-left { width: 500px; }
+
 /* ── Left column (player) ───────────── */
 .app-left {
   width: 420px;

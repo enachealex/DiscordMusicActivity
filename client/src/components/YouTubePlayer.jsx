@@ -9,12 +9,22 @@ function thumbSrc(url) {
   return url;
 }
 
+// EQ presets applied via two shelving BiquadFilters (low shelf = bass, high shelf =
+// treble), in dB. Web-only feature; 'flat' is a no-op so Discord stays uncolored.
+const EQ_PRESETS = {
+  flat: { bass: 0, treble: 0 },
+  bass: { bass: 6, treble: 0 },
+  treble: { bass: 0, treble: 5 },
+  vocal: { bass: -2, treble: 3 },
+};
+
 export default function YouTubePlayer({
   track,
   room,
   isDJ,
   detached,
   loop,
+  eqMode = 'flat',
   onSync,
   onSkip,
   onPlayerReady,
@@ -28,6 +38,8 @@ export default function YouTubePlayer({
   const sourceNodeRef = useRef(null);
   const compressorNodeRef = useRef(null);
   const outputGainNodeRef = useRef(null);
+  const lowShelfRef = useRef(null);
+  const highShelfRef = useRef(null);
   const [needsInteraction, setNeedsInteraction] = useState(false);
 
   function ensureAudioProcessing(audio) {
@@ -40,28 +52,56 @@ export default function YouTubePlayer({
       audioContextRef.current = ctx;
 
       const source = ctx.createMediaElementSource(audio);
+      // Two-band shelving EQ (bass / treble). Defaults to 0 dB (flat) so the chain is
+      // transparent unless an EQ preset is selected (web-only).
+      const lowShelf = ctx.createBiquadFilter();
+      lowShelf.type = 'lowshelf';
+      lowShelf.frequency.value = 200;
+      lowShelf.gain.value = 0;
+      const highShelf = ctx.createBiquadFilter();
+      highShelf.type = 'highshelf';
+      highShelf.frequency.value = 3000;
+      highShelf.gain.value = 0;
+
       const compressor = ctx.createDynamicsCompressor();
       const outputGain = ctx.createGain();
 
       // Gentle loudness smoothing: reduce sudden peaks while keeping tone natural.
-      compressor.threshold.value = -24;
+      compressor.threshold.value = -22;
       compressor.knee.value = 24;
-      compressor.ratio.value = 3;
-      compressor.attack.value = 0.003;
-      compressor.release.value = 0.22;
-      outputGain.gain.value = 1.05;
+      compressor.ratio.value = 2.5;
+      compressor.attack.value = 0.004;
+      compressor.release.value = 0.25;
+      outputGain.gain.value = 1.06;
 
-      source.connect(compressor);
+      source.connect(lowShelf);
+      lowShelf.connect(highShelf);
+      highShelf.connect(compressor);
       compressor.connect(outputGain);
       outputGain.connect(ctx.destination);
 
       sourceNodeRef.current = source;
+      lowShelfRef.current = lowShelf;
+      highShelfRef.current = highShelf;
       compressorNodeRef.current = compressor;
       outputGainNodeRef.current = outputGain;
+      applyEq(eqMode);
       onDebugEvent?.({ service: 'youtube', lastEvent: 'yt:dsp-enabled' });
     } catch {
       // WebAudio setup can fail in restrictive embeds; fallback to regular element audio.
     }
+  }
+
+  // Apply an EQ preset to the shelving filters (smooth ramp avoids clicks).
+  function applyEq(mode) {
+    const low = lowShelfRef.current;
+    const high = highShelfRef.current;
+    const ctx = audioContextRef.current;
+    if (!low || !high || !ctx) return;
+    const preset = EQ_PRESETS[mode] || EQ_PRESETS.flat;
+    const t = ctx.currentTime;
+    low.gain.setTargetAtTime(preset.bass, t, 0.05);
+    high.gain.setTargetAtTime(preset.treble, t, 0.05);
   }
 
   function resumeAudioProcessingContext() {
@@ -204,6 +244,11 @@ export default function YouTubePlayer({
       audio.load();
     };
   }, [track?.id, track?.service]);
+
+  // Re-apply EQ whenever the selected preset changes (web-only control upstream).
+  useEffect(() => {
+    applyEq(eqMode);
+  }, [eqMode]);
 
   // Some embedded Discord sessions block autoplay with sound until user gesture.
   useEffect(() => {

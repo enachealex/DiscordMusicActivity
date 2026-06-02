@@ -92,7 +92,11 @@ async function resolveAudioUrl(videoId) {
     try {
       const url = `https://www.youtube.com/watch?v=${videoId}`;
       const ytdlp = spawn('yt-dlp', [
-        '-f', 'bestaudio[ext=webm]/bestaudio',
+        // Prefer the highest-bitrate audio-only stream. Opus (webm) and m4a both play
+        // in browsers and the Discord Activity webview; -S sorts candidates so the
+        // best audio bitrate (abr) wins instead of defaulting to a compatibility format.
+        '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio',
+        '-S', 'acodec:opus,abr,asr',
         '--no-playlist',
         '--no-warnings',
         '-g',

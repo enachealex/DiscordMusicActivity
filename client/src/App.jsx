@@ -9,6 +9,7 @@ import Search from './components/Search.jsx';
 import DJBadge from './components/DJBadge.jsx';
 import PlayerControls from './components/PlayerControls.jsx';
 import ListenTogether from './components/ListenTogether.jsx';
+import EqSelector from './components/EqSelector.jsx';
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
@@ -38,6 +39,8 @@ export default function App() {
   const [detached, setDetached] = useState(false);
   const [detachedService, setDetachedService] = useState(null);
   const [detachedRoom, setDetachedRoom] = useState(null);
+  // Web-only audio EQ preset (flat | bass | treble | vocal). Persisted per browser.
+  const [eqMode, setEqMode] = useState(() => localStorage.getItem('eq-mode') || 'flat');
   // Listen Together: the room code this web session is part of (null = solo / Discord).
   const [roomCode, setRoomCode] = useState(() => (isWebMode ? getRoomCodeFromUrl() : null));
   const [showDebug, setShowDebug] = useState(false);
@@ -259,6 +262,17 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Persist the web-only EQ preset per browser.
+  useEffect(() => {
+    localStorage.setItem('eq-mode', eqMode);
+  }, [eqMode]);
+
+  // Tag the document for web mode so CSS can use a roomier desktop layout. Discord
+  // keeps the compact fixed-size panel; mobile rules are unaffected.
+  useEffect(() => {
+    document.body.classList.toggle('web-mode', isWebMode);
+  }, []);
+
   // Discord init + socket
   useEffect(() => {
     async function init() {
@@ -303,9 +317,16 @@ export default function App() {
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;
-              // Fall back to an isolated solo room (not a shared one) if the voice
-              // channel id is somehow missing, so a broken embed never leaks state.
-              channelId = discordSdk.channelId ?? `solo:${stableDevId}`;
+              // Persist the queue per Discord voice channel. discordSdk.channelId can be
+              // null right after ready() (e.g. some launch contexts), so fall back to the
+              // per-activity instanceId — which is still stable and channel-scoped — before
+              // collapsing to an isolated solo room. Using `discord:` keeps the key numeric-
+              // free but server-side persistence (non-ephemeral) still applies since it is
+              // neither a solo: nor lt: room.
+              const voiceChannelId = discordSdk.channelId || discordSdk.instanceId;
+              channelId = voiceChannelId
+                ? `discord:${voiceChannelId}`
+                : `solo:${stableDevId}`;
             })(),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Discord init timeout')), 15000)
@@ -803,7 +824,18 @@ export default function App() {
             </button>
           )}
           {isWebMode ? (
-            <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
+            <>
+              <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
+              <a
+                className="add-to-discord-btn"
+                href="https://discord.com/oauth2/authorize?client_id=1492382387139772476"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Add this app to your Discord server"
+              >
+                ✛ Add to Discord
+              </a>
+            </>
           ) : (
             <button
               className={`detach-btn ${detached ? 'active' : ''}`}
@@ -844,6 +876,7 @@ export default function App() {
               onPlayerReady={handlePlayerReady}
               onPlayStateChange={setLocalPlaying}
               onDebugEvent={handleDebugEvent}
+              eqMode={isWebMode ? eqMode : 'flat'}
             />
           ) : spotifyToken ? (
             <SpotifyPlayer
@@ -892,6 +925,10 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {isWebMode && activeService === 'youtube' && (
+          <EqSelector value={eqMode} onChange={setEqMode} />
+        )}
 
         <div className="app-queue-slot">
           <Queue

@@ -570,7 +570,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
             </div>
             {activePlaylist ? (
               <button type="button" className="btn-back-playlist" onClick={clearSelectedPlaylist}>
-                ← Back to playlists
+                ← Back
               </button>
             ) : null}
           </div>
