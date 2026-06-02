@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './ListenTogether.css';
 
 // Web-only "Listen Together" control. Lets a website visitor spin up a shareable
@@ -11,6 +11,24 @@ export default function ListenTogether({ roomCode, serverUrl }) {
   const [copied, setCopied] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
+  const wrapRef = useRef(null);
+
+  // Close the popover when the user clicks anywhere outside it (or presses Escape).
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
 
   const inRoom = !!roomCode;
   const shareUrl = inRoom ? `${window.location.origin}/room/${roomCode}` : '';
@@ -51,7 +69,7 @@ export default function ListenTogether({ roomCode, serverUrl }) {
   }
 
   return (
-    <div className="lt-wrap">
+    <div className="lt-wrap" ref={wrapRef}>
       <button
         className={`lt-btn ${inRoom ? 'active' : ''}`}
         onClick={() => setOpen((o) => !o)}

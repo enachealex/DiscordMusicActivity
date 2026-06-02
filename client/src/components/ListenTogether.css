@@ -18,6 +18,24 @@
 .lt-btn:hover { background: #35373c; color: #fff; }
 .lt-btn.active { background: linear-gradient(135deg, #5865f2, #7983f5); color: #fff; }
 
+/* Web-only "Add to Discord" link styled as a button (sits next to .lt-btn). */
+.add-to-discord-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  background: #5865f2;
+  color: #fff;
+  transition: background 0.15s;
+}
+
+.add-to-discord-btn:hover { background: #4752c4; }
+
 .lt-popover {
   position: absolute;
   top: calc(100% + 8px);
