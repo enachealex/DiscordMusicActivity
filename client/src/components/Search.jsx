@@ -329,6 +329,16 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
     closeContextMenu();
   }
 
+  // Append every track in a playlist to the current queue (without replacing it,
+  // unlike "Play Now"). Works from the playlist card right-click menu or from the
+  // button shown while a playlist is open.
+  function addAllToQueue(playlist) {
+    const target = playlist || (contextMenu?.type === 'playlist' ? contextMenu.playlist : activePlaylist);
+    if (!target?.tracks?.length) return;
+    target.tracks.forEach((track) => onAdd(track));
+    closeContextMenu();
+  }
+
   function deleteSelectedPlaylist() {
     if (contextMenu?.type !== 'playlist' || !contextMenu.playlist) return;
     const playlistId = contextMenu.playlist.id;
@@ -563,6 +573,18 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               </button>
             ) : null}
           </div>
+
+          {activePlaylist && activePlaylist.tracks.length > 0 ? (
+            <div className="playlist-open-toolbar">
+              <button
+                type="button"
+                className="btn-add-all-queue"
+                onClick={() => addAllToQueue(activePlaylist)}
+              >
+                + Add All to Queue
+              </button>
+            </div>
+          ) : null}
 
           {activePlaylist ? (
             <div className="playlist-songs">
@@ -818,6 +840,13 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                   ▶ Play Now
                 </button>
               )}
+              <button
+                onClick={() => {
+                  addAllToQueue(contextMenu.playlist);
+                }}
+              >
+                + Add All to Queue
+              </button>
               <button
                 onClick={() => {
                   deleteSelectedPlaylist();
