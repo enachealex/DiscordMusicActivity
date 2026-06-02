@@ -286,10 +286,27 @@ export default function App() {
       // Web isolation: each visitor gets a private "solo:" room by default. A "Listen
       // Together" link (/room/CODE) joins the shared "lt:" room instead. Discord sets
       // channelId from the voice channel below.
+      //
+      // The solo key is tied to a per-tab sessionStorage id (not localStorage) so the
+      // queue persists across reloads/navigation within the same browser session but
+      // starts fresh when the tab/browser is closed — "session only" persistence.
+      let sessionId = sessionStorage.getItem('solo-session-id');
+      if (!sessionId) {
+        sessionId = `s-${Math.random().toString(36).slice(2)}`;
+        sessionStorage.setItem('solo-session-id', sessionId);
+      }
       const urlRoomCode = isWebMode ? getRoomCodeFromUrl() : null;
-      let channelId = urlRoomCode ? `lt:${urlRoomCode}` : `solo:${stableDevId}`;
+      let channelId = urlRoomCode ? `lt:${urlRoomCode}` : `solo:${sessionId}`;
 
       if (discordSdk) {
+        // The voice-channel id comes from the activity launch URL (?channel_id=) and is
+        // available on the SDK immediately — independent of the auth handshake. Pin the
+        // persistent per-channel room key NOW so the queue still persists even if auth
+        // later fails or times out. instanceId changes per launch, so it is NOT used for
+        // the persistent key; we only fall back to solo: when there is no channel at all.
+        if (discordSdk.channelId) {
+          channelId = `discord:${discordSdk.channelId}`;
+        }
         try {
           // Hard 15-second cap on the ENTIRE Discord handshake (ready + authorize +
           // token exchange) so a stalled authorize dialog or unreachable server never
@@ -297,6 +314,11 @@ export default function App() {
           await Promise.race([
             (async () => {
               await discordSdk.ready();
+              // channelId may not have been on the URL at construction in some launch
+              // contexts; re-read after ready() now that the SDK is fully initialised.
+              if (discordSdk.channelId) {
+                channelId = `discord:${discordSdk.channelId}`;
+              }
               // Patch fetch, WebSocket, and XHR so requests to our server
               // are routed through Discord's /.proxy/ path instead of cross-origin.
               const targetHost = new URL(resolvedServerUrl).host;
@@ -317,16 +339,6 @@ export default function App() {
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;
-              // Persist the queue per Discord voice channel. discordSdk.channelId can be
-              // null right after ready() (e.g. some launch contexts), so fall back to the
-              // per-activity instanceId — which is still stable and channel-scoped — before
-              // collapsing to an isolated solo room. Using `discord:` keeps the key numeric-
-              // free but server-side persistence (non-ephemeral) still applies since it is
-              // neither a solo: nor lt: room.
-              const voiceChannelId = discordSdk.channelId || discordSdk.instanceId;
-              channelId = voiceChannelId
-                ? `discord:${voiceChannelId}`
-                : `solo:${stableDevId}`;
             })(),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Discord init timeout')), 15000)
@@ -804,17 +816,6 @@ export default function App() {
             <circle cx="50" cy="50" r="3.5" fill="#18191c"/>
           </svg>
           <h1 className="app-title-text">Music</h1>
-          {isWebMode && (
-            <a
-              className="add-to-discord-btn"
-              href="https://discord.com/oauth2/authorize?client_id=1492382387139772476"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Add this app to your Discord server"
-            >
-              ✛ Add to Discord
-            </a>
-          )}
           <span className="app-header-spacer" />
           <button
             className={`mobile-service-toggle ${activeService === 'spotify' ? 'spotify' : 'youtube'}`}
@@ -854,6 +855,17 @@ export default function App() {
             >
               {detached ? '← Rejoin' : 'Detach'}
             </button>
+          )}
+          {isWebMode && (
+            <a
+              className="add-to-discord-btn"
+              href="https://discord.com/oauth2/authorize?client_id=1492382387139772476"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Add this app to your Discord server"
+            >
+              ✛ Add to Discord
+            </a>
           )}
         </header>
 

@@ -3,7 +3,8 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin: 10px 0;
+  padding: 0 14px;
 }
 
 .eq-selector-label {

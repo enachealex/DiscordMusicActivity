@@ -562,10 +562,13 @@ io.on('connection', async (socket) => {
       // If room is empty, keep djUserId so the same person reclaims it on rejoin
     }
 
-    // Ephemeral rooms (web solo / Listen Together) are discarded when the last
-    // person leaves so playback state never carries over to a future session.
+    // "Listen Together" rooms are discarded as soon as the last person leaves so a
+    // stale code never resurrects old state. Solo (per-tab session) rooms are kept in
+    // memory while empty so a page reload within the same browser session keeps its
+    // queue — they are never written to disk and vanish on the next server restart,
+    // matching "session-only" persistence. Discord rooms persist to disk as before.
     const remaining = io.sockets.adapter.rooms.get(channelId)?.size ?? 0;
-    if (remaining === 0 && isEphemeralRoom(channelId)) {
+    if (remaining === 0 && channelId.startsWith('lt:')) {
       rooms.delete(channelId);
       const pc = pendingClaims.get(channelId);
       if (pc) {

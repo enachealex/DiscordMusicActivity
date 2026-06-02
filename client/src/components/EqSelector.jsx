@@ -3,7 +3,7 @@ import './EqSelector.css';
 // Web-only audio EQ preset picker. Personal to each listener (does not affect the
 // shared room or Discord). Applies via WebAudio shelving filters in YouTubePlayer.
 const OPTIONS = [
-  { id: 'flat', label: 'Flat', title: 'No EQ — original sound' },
+  { id: 'flat', label: 'None', title: 'No EQ — original sound' },
   { id: 'bass', label: 'Bass', title: 'Boost low frequencies' },
   { id: 'treble', label: 'Treble', title: 'Boost high frequencies' },
   { id: 'vocal', label: 'Vocal', title: 'Emphasize vocals' },
