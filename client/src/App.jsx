@@ -10,6 +10,7 @@ import DJBadge from './components/DJBadge.jsx';
 import PlayerControls from './components/PlayerControls.jsx';
 import ListenTogether from './components/ListenTogether.jsx';
 import EqSelector from './components/EqSelector.jsx';
+import DiscordParty from './components/DiscordParty.jsx';
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
@@ -43,6 +44,12 @@ export default function App() {
   const [eqMode, setEqMode] = useState(() => localStorage.getItem('eq-mode') || 'flat');
   // Listen Together: the room code this web session is part of (null = solo / Discord).
   const [roomCode, setRoomCode] = useState(() => (isWebMode ? getRoomCodeFromUrl() : null));
+  // The resolved "home" room key for this session (web solo: / Discord discord:<channel>).
+  const [defaultChannelId, setDefaultChannelId] = useState(null);
+  // Discord-only: a Listen Together party code this user has joined in-place (null = none).
+  // Only available when not sharing a voice channel with other people.
+  const [discordPartyCode, setDiscordPartyCode] = useState(null);
+  const [canUseDiscordParty, setCanUseDiscordParty] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
@@ -339,6 +346,16 @@ export default function App() {
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;
+              // Discord users may join a Listen Together party by code ONLY when they
+              // aren't sharing a voice channel with other people (i.e. doing the activity
+              // solo with the bot). Count connected participants to decide.
+              try {
+                const res = await discordSdk.commands.getInstanceConnectedParticipants();
+                const count = res?.participants?.length ?? 0;
+                if (count <= 1) setCanUseDiscordParty(true);
+              } catch {
+                // If we can't read participants, default to NOT offering party join.
+              }
             })(),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Discord init timeout')), 15000)
@@ -350,55 +367,56 @@ export default function App() {
       }
 
       setUser(userData);
-      // After patchUrlMappings, socket.io polling/WS to VITE_SERVER_URL is
-      // transparently routed through Discord's /.proxy/ path.
-      // Force polling first — it always works through Discord's HTTP proxy
-      // even if WebSocket upgrades are blocked by the activity sandbox.
-      const serverUrl = resolvedServerUrl;
-      const socket = io(serverUrl, {
-        path: '/socket.io',
-        transports: ['polling', 'websocket'],
-        query: { channelId, userId: userData.id, username: userData.username },
-      });
-      socket.on('room:state', setRoom);
-      socket.on('dj:changed', ({ djUserId }) =>
-        setRoom((prev) => (prev ? { ...prev, djUserId } : prev))
-      );
-
-      // DJ receives a claim request
-      socket.on('dj:claim-request', ({ claimerId, claimerUsername }) => {
-        setClaimRequest({ claimerId, claimerUsername, countdown: 10 });
-      });
-
-      // Claimer is denied the DJ role
-      socket.on('dj:claim-denied', () => {
-        setClaimPending(null);
-      });
-
-      // DJ's request was cancelled by claimer
-      socket.on('dj:claim-cancelled', () => {
-        setClaimRequest(null);
-      });
-
-      socket.on('spotify-auth', (data) => {
-        const { access_token, refresh_token, expires_in } = data;
-        localStorage.setItem('spotify_refresh_token', refresh_token);
-        setSpotifyToken({
-          access_token,
-          refresh_token,
-          expires_at: Date.now() + parseInt(expires_in || '3600') * 1000,
-        });
-        setSpotifyRestoring(false);
-      });
-
-      socketRef.current = socket;
-      socket.on('connect', () => setSocketId(socket.id));
-      if(socket.connected) setSocketId(socket.id);
+      setDefaultChannelId(channelId);
       setReady(true);
     }
     init();
-    return () => socketRef.current?.disconnect();
   }, [resolvedServerUrl]);
+
+  // Socket connection. Re-runs when the effective room changes (e.g. a Discord user
+  // joins/leaves a Listen Together party), reconnecting in place without a page reload.
+  const effectiveChannelId = discordPartyCode ? `lt:${discordPartyCode}` : defaultChannelId;
+  useEffect(() => {
+    if (!user || !effectiveChannelId) return;
+    // Clear any prior room state so switching parties doesn't flash stale tracks.
+    setRoom(null);
+    // After patchUrlMappings, socket.io polling/WS to VITE_SERVER_URL is transparently
+    // routed through Discord's /.proxy/ path. Force polling first — it always works
+    // through Discord's HTTP proxy even if WebSocket upgrades are blocked by the sandbox.
+    const socket = io(resolvedServerUrl, {
+      path: '/socket.io',
+      transports: ['polling', 'websocket'],
+      query: { channelId: effectiveChannelId, userId: user.id, username: user.username },
+    });
+    socket.on('room:state', setRoom);
+    socket.on('dj:changed', ({ djUserId }) =>
+      setRoom((prev) => (prev ? { ...prev, djUserId } : prev))
+    );
+    socket.on('dj:claim-request', ({ claimerId, claimerUsername }) => {
+      setClaimRequest({ claimerId, claimerUsername, countdown: 10 });
+    });
+    socket.on('dj:claim-denied', () => setClaimPending(null));
+    socket.on('dj:claim-cancelled', () => setClaimRequest(null));
+    socket.on('spotify-auth', (data) => {
+      const { access_token, refresh_token, expires_in } = data;
+      localStorage.setItem('spotify_refresh_token', refresh_token);
+      setSpotifyToken({
+        access_token,
+        refresh_token,
+        expires_at: Date.now() + parseInt(expires_in || '3600') * 1000,
+      });
+      setSpotifyRestoring(false);
+    });
+
+    socketRef.current = socket;
+    socket.on('connect', () => setSocketId(socket.id));
+    if (socket.connected) setSocketId(socket.id);
+
+    return () => {
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
+    };
+  }, [user, effectiveChannelId, resolvedServerUrl]);
 
   const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
   const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
@@ -839,23 +857,48 @@ export default function App() {
           {isWebMode ? (
             <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
           ) : (
-            <button
-              className={`detach-btn ${detached ? 'active' : ''}`}
-              onClick={() => {
-                if (detached) {
-                  setDetached(false);
-                  setDetachedService(null);
-                  setDetachedRoom(null);
-                } else {
-                  setDetachedRoom(cloneRoomState(room));
-                  setLocalPlaying(false);
-                  setDetached(true);
-                }
-              }}
-            >
-              {detached ? '← Rejoin' : 'Detach'}
-            </button>
+            <>
+              {(canUseDiscordParty || discordPartyCode) && (
+                <DiscordParty
+                  partyCode={discordPartyCode}
+                  onJoin={(code) => {
+                    setDetached(false);
+                    setDetachedService(null);
+                    setDetachedRoom(null);
+                    setDiscordPartyCode(code);
+                  }}
+                  onLeave={() => setDiscordPartyCode(null)}
+                />
+              )}
+              {!discordPartyCode && (
+                <button
+                  className={`detach-btn ${detached ? 'active' : ''}`}
+                  onClick={() => {
+                    if (detached) {
+                      setDetached(false);
+                      setDetachedService(null);
+                      setDetachedRoom(null);
+                    } else {
+                      setDetachedRoom(cloneRoomState(room));
+                      setLocalPlaying(false);
+                      setDetached(true);
+                    }
+                  }}
+                >
+                  {detached ? '← Rejoin' : 'Detach'}
+                </button>
+              )}
+            </>
           )}
+        </header>
+
+        <div className="service-row">
+          <ServiceSelector
+            current={detached ? (detachedService ?? activeRoom.currentService) : room.currentService}
+            onChange={handleServiceChange}
+            isDJ={isDJ}
+            detached={detached}
+          />
           {isWebMode && (
             <a
               className="add-to-discord-btn"
@@ -867,14 +910,7 @@ export default function App() {
               ✛ Add to Discord
             </a>
           )}
-        </header>
-
-        <ServiceSelector
-          current={detached ? (detachedService ?? activeRoom.currentService) : room.currentService}
-          onChange={handleServiceChange}
-          isDJ={isDJ}
-          detached={detached}
-        />
+        </div>
 
         <div className="now-playing">
           {activeService === 'youtube' ? (
