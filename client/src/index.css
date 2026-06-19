@@ -43,11 +43,16 @@ body {
 }
 
 /* Web version gets a roomier desktop layout than the fixed Discord panel.
-   Capped so it stays comfortable on large monitors; the mobile media query
-   below still collapses everything to a single full-width column. */
-body.web-mode #root { max-width: 1100px; height: min(720px, 100vh); }
-body.web-mode .app { max-width: 1100px; height: min(720px, 100vh); }
-body.web-mode .app-left { width: 500px; }
+   Capped so it stays comfortable on large monitors. Gated to desktop widths:
+   these rules use `body.web-mode .app-left` (specificity 0,2,1) which would
+   otherwise beat the mobile `.app-left { width: 100% }` rule (0,1,0) — media
+   queries don't add specificity — leaving the layout stuck at desktop width on
+   phones. Scoping them to min-width:601px lets the mobile query win below that. */
+@media (min-width: 601px) {
+  body.web-mode #root { max-width: 1100px; height: min(720px, 100vh); }
+  body.web-mode .app { max-width: 1100px; height: min(720px, 100vh); }
+  body.web-mode .app-left { width: 500px; }
+}
 
 /* ── Left column (player) ───────────── */
 .app-left {
@@ -1421,7 +1426,27 @@ body.web-mode .app-left { width: 500px; }
     border-bottom: 2px solid var(--surface2);
   }
 
+  /* Let the header wrap instead of overflowing off-screen: there are several
+     controls (service toggle, DJ badge/claim, party, detach) that can't all fit
+     on one phone-width row. */
+  .app-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  /* On mobile the service is switched via .mobile-service-toggle in the header,
+     so the whole desktop service row (selector + "Add to Discord") is hidden.
+     This also satisfies the requirement to hide "Add to Discord" on mobile. */
+  .service-row {
+    display: none;
+  }
+
   .service-selector {
+    display: none;
+  }
+
+  /* "Add to Discord" is hidden on mobile regardless of where it sits. */
+  .add-to-discord-btn {
     display: none;
   }
 
