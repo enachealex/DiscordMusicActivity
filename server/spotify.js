@@ -78,7 +78,7 @@ spotifyRouter.get('/login', (req, res) => {
 
     try {
       const { data } = await axios.get('https://api.spotify.com/v1/search', {
-        params: { q, type: 'track', limit: 10 },
+        params: { q, type: 'track', limit: 25 },
         headers: { Authorization: `Bearer ${access_token}` },
       });
       const tracks = data.tracks.items.map((track) => ({

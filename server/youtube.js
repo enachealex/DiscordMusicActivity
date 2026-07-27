@@ -225,7 +225,7 @@ youtubeRouter.get('/search', async (req, res) => {
         q: String(q),
         type: 'video',
         videoCategoryId: '10', // Music
-        maxResults: 10,
+        maxResults: 25,
         key: YOUTUBE_API_KEY,
       },
     });

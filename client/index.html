@@ -18,10 +18,16 @@
   <body style="margin:0;background:#1e1f22;color:#949ba4;font-family:sans-serif;">
     <!-- Inline dark loading state so something is always visible even if the
          external CSS bundle fails to load (e.g. during Discord Activity init). -->
-    <div id="root" style="display:flex;align-items:center;justify-content:center;height:100vh;">
-      <div style="text-align:center">
-        <div style="width:32px;height:32px;border:3px solid #3f4147;border-top-color:#5865f2;border-radius:50%;animation:_s 0.8s linear infinite;margin:0 auto 12px;"></div>
-        <p style="margin:0;font-size:13px">Connecting&hellip;</p>
+    <!-- The centering lives on this inner wrapper, never on #root itself: an
+         inline style there outranks the stylesheet permanently, and a centred
+         flex #root pushes the top of a too-tall app off-screen where no amount
+         of scrolling can reach it. React discards this wrapper when it mounts. -->
+    <div id="root">
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;">
+        <div style="text-align:center">
+          <div style="width:32px;height:32px;border:3px solid #3f4147;border-top-color:#5865f2;border-radius:50%;animation:_s 0.8s linear infinite;margin:0 auto 12px;"></div>
+          <p style="margin:0;font-size:13px">Connecting&hellip;</p>
+        </div>
       </div>
     </div>
     <style>@keyframes _s{to{transform:rotate(360deg)}}</style>

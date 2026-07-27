@@ -1406,8 +1406,21 @@ body {
    Mobile Layout (Discord Phone App)
    ======================================================= */
 @media (max-width: 600px) {
+  /* Phone browsers report 100vh as the height with the address bar *hidden*, so a
+     100vh child is taller than what's actually on screen. Vertically centring it
+     (the desktop `body` rule) then pushes the top of the app above the fold, and
+     `overflow: hidden` means no amount of scrolling brings it back — the header
+     just disappears. Stack from the top instead, and prefer dvh where supported
+     so the box tracks the address bar as it collapses. */
+  body {
+    display: block;
+    height: 100vh;
+    height: 100dvh;
+  }
+
   #root {
     height: 100vh;
+    height: 100dvh;
     overflow-y: auto;
   }
 
@@ -1415,6 +1428,7 @@ body {
     flex-direction: column;
     height: auto;
     min-height: 100vh;
+    min-height: 100dvh;
     overflow: visible;
   }
 
@@ -1432,6 +1446,27 @@ body {
   .app-header {
     flex-wrap: wrap;
     row-gap: 6px;
+    /* Anchors the party popovers below (and lifts them over the content that
+       follows, which would otherwise paint on top). */
+    position: relative;
+    z-index: 60;
+  }
+
+  /* Once the header wraps, "Listen Together" / "Party" sit near the left edge,
+     and a popover anchored to the button with `right: 0` hangs off the side of
+     the screen. Anchor to the header instead so it spans the phone's width
+     wherever the button happens to land. */
+  .app-header .lt-wrap,
+  .app-header .dp-wrap {
+    position: static;
+  }
+
+  .app-header .lt-popover,
+  .app-header .dp-popover {
+    top: calc(100% + 6px);
+    left: 12px;
+    right: 12px;
+    width: auto;
   }
 
   /* On mobile the service is switched via .mobile-service-toggle in the header,
