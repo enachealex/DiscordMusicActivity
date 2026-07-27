@@ -1,0 +1,21 @@
+{
+  "appId": "com.thejumpvault.discordmusic",
+  "appName": "JumpVault Music",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#1e1f22"
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK"
+    }
+  },
+  "server": {
+    "url": "https://discordmusic.thejumpvault.com",
+    "androidScheme": "https",
+    "cleartext": false,
+    "errorPath": "offline.html",
+    "allowNavigation": ["discordmusic.thejumpvault.com"]
+  }
+}

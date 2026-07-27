@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Same vinyl mark as client/public/favicon.svg, with the ♪ glyph redrawn as
+       paths — icon rasterisation can't rely on a font being installed. -->
+  <defs>
+    <radialGradient id="labelShine" cx="38%" cy="33%" r="55%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="black" stop-opacity="0.15"/>
+    </radialGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="#18191c"/>
+  <circle cx="50" cy="50" r="44" fill="none" stroke="#2a2b2f" stroke-width="1.2"/>
+  <circle cx="50" cy="50" r="40" fill="none" stroke="#2a2b2f" stroke-width="1.2"/>
+  <circle cx="50" cy="50" r="36" fill="none" stroke="#2a2b2f" stroke-width="1.2"/>
+  <circle cx="50" cy="50" r="32" fill="none" stroke="#2a2b2f" stroke-width="1.2"/>
+  <circle cx="50" cy="50" r="28" fill="none" stroke="#2a2b2f" stroke-width="1.2"/>
+  <circle cx="50" cy="50" r="22" fill="#5865f2"/>
+  <circle cx="50" cy="50" r="22" fill="url(#labelShine)"/>
+  <!-- No centre hole here: at icon scale the note sits where the hole would be,
+       and punching it through leaves a black notch across the note. -->
+  <g fill="#ffffff" opacity="0.95">
+    <ellipse cx="45.5" cy="58.5" rx="6.2" ry="4.6" transform="rotate(-20 45.5 58.5)"/>
+    <path d="M50.4 57.8 V38.6 l9.6 4.1 v3.6 l-7.2 -3.1 v14.6 z"/>
+  </g>
+</svg>

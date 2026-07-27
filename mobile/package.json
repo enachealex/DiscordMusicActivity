@@ -1,0 +1,23 @@
+{
+  "name": "discord-music-activity-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor Android shell for the DiscordMusicActivity web app",
+  "scripts": {
+    "icons": "node scripts/gen-icons.mjs && capacitor-assets generate --android",
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "apk:debug": "cd android && gradlew.bat assembleDebug",
+    "apk:release": "cd android && gradlew.bat assembleRelease",
+    "publish:apk": "node scripts/publish-apk.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "sharp": "^0.35.3"
+  }
+}

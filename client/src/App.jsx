@@ -11,6 +11,7 @@ import PlayerControls from './components/PlayerControls.jsx';
 import ListenTogether from './components/ListenTogether.jsx';
 import EqSelector from './components/EqSelector.jsx';
 import DiscordParty from './components/DiscordParty.jsx';
+import InstallAppBanner from './components/InstallAppBanner.jsx';
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
@@ -878,6 +879,10 @@ export default function App() {
             </>
           )}
         </header>
+
+        {/* Install prompt: mobile browsers only. The Discord activity and the
+            packaged app both suppress it (see InstallAppBanner). */}
+        {isWebMode && isMobileLayout && <InstallAppBanner />}
 
         <div className="service-row">
           <ServiceSelector

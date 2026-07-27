@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the web app's page background, so the status/gesture bar areas
+         don't frame the dark WebView in white. -->
+    <color name="appBackground">#1e1f22</color>
+</resources>

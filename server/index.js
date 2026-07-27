@@ -601,6 +601,38 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), rooms: rooms.size });
 });
 
+// ── Android app download ────────────────────────────────────────────────────
+// The APK is built from mobile/ (see mobile/README.md) and copied here with
+// `npm run publish:apk`. The mobile web UI only shows its download banner when
+// /download/android/meta reports the file is actually present, so a deploy
+// without the APK degrades to no banner rather than a dead link.
+const ANDROID_APK_FILENAME = 'JumpVaultMusic.apk';
+const androidApkPath = join(__dirname, 'downloads', ANDROID_APK_FILENAME);
+
+app.get('/download/android/meta', async (_req, res) => {
+  try {
+    const stat = await fs.stat(androidApkPath);
+    res.set('Cache-Control', 'no-cache');
+    res.json({ available: true, sizeBytes: stat.size, updatedAt: stat.mtimeMs });
+  } catch {
+    res.json({ available: false });
+  }
+});
+
+app.get('/download/android', async (_req, res) => {
+  try {
+    await fs.access(androidApkPath);
+  } catch {
+    return res.status(404).send('Android app is not available yet.');
+  }
+  // The APK MIME type plus an attachment disposition is what makes the browser
+  // prompt to download instead of trying to render the bytes.
+  res.set('Content-Type', 'application/vnd.android.package-archive');
+  res.set('Content-Disposition', `attachment; filename="${ANDROID_APK_FILENAME}"`);
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(androidApkPath);
+});
+
 // Serve React production build (client/dist) for Discord Activity
 const clientDist = join(__dirname, '../client/dist');
 app.use(express.static(clientDist));

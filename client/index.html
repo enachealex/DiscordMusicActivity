@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Discord Music Activity</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Home-screen install (iOS uses apple-touch-icon + the apple-* meta tags;
+         everything else reads the manifest). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1e1f22" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Music" />
   </head>
   <body style="margin:0;background:#1e1f22;color:#949ba4;font-family:sans-serif;">
     <!-- Inline dark loading state so something is always visible even if the
