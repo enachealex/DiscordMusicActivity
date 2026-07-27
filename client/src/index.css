@@ -332,8 +332,10 @@ body {
 .search-input-row { display: flex; gap: 8px; align-items: center; }
 .search-input-field { position: relative; flex: 1; min-width: 0; }
 .search-action-bar { display: flex; gap: 8px; margin-top: 8px; }
-.btn-mobile-search-close {
-  margin-left: auto;
+/* Leaves the mobile full-screen search. Sits at the start of the input row so it
+   reads as a back affordance in the top-left corner. */
+.btn-mobile-search-back {
+  flex-shrink: 0;
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -341,9 +343,10 @@ body {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
 }
-.btn-mobile-search-close:hover {
+.btn-mobile-search-back:hover {
   border-color: var(--accent);
   color: var(--text);
 }
@@ -1625,6 +1628,13 @@ body {
 
   .btn-search {
     padding: 10px 16px;
+    min-height: 44px;
+    font-size: 13px;
+  }
+
+  /* Same touch target as the Search button it shares the row with. */
+  .btn-mobile-search-back {
+    padding: 10px 12px;
     min-height: 44px;
     font-size: 13px;
   }

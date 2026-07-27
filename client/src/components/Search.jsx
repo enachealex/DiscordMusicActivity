@@ -460,6 +460,16 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
         <>
       <form onSubmit={handleSearch} className="search-input-wrapper">
         <div className="search-input-row">
+          {isMobileLayout && (
+            <button
+              type="button"
+              className="btn-mobile-search-back"
+              onClick={closeMobileSearch}
+              aria-label="Back"
+            >
+              ‹ Back
+            </button>
+          )}
           <div className="search-input-field">
             <input
               className="search-input"
@@ -512,15 +522,6 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           >
             History
           </button>
-          {isMobileLayout && (
-            <button
-              type="button"
-              className="btn-mobile-search-close"
-              onClick={closeMobileSearch}
-            >
-              Close
-            </button>
-          )}
         </div>
       </form>
 
