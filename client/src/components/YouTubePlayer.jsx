@@ -171,6 +171,25 @@ export default function YouTubePlayer({
       .catch(() => {
         setNeedsInteraction(true);
         onDebugEvent?.({ service: 'youtube', autoplayBlocked: true, lastEvent: 'yt:play-retry-blocked' });
+        // A play() issued while the element is still buffering (or mid-seek, which
+        // is exactly what a joiner syncing to the DJ's position is doing) rejects
+        // even when the browser would otherwise allow it. Retry once the element
+        // actually has data, so joining doesn't wait for the next DJ sync tick.
+        audio.addEventListener(
+          'canplay',
+          () => {
+            audio
+              .play()
+              .then(() => {
+                setNeedsInteraction(false);
+                onDebugEvent?.({ service: 'youtube', playerState: 'playing', autoplayBlocked: false, lastEvent: 'yt:play-canplay' });
+              })
+              .catch(() => {
+                // Genuinely gesture-blocked; the Enable audio button stays up.
+              });
+          },
+          { once: true }
+        );
       });
   }
 
