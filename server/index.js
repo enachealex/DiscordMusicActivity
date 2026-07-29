@@ -590,9 +590,49 @@ function generateRoomCode() {
   return code;
 }
 
-app.post('/rooms', async (_req, res) => {
+// Upper bound on a seeded queue — the payload is client-supplied, so cap it.
+const MAX_SEED_TRACKS = 300;
+
+// Copies a solo listener's current queue into the room they're creating, so starting
+// a party doesn't throw away what they were already playing. Everything here comes
+// from the browser, so keep only the fields the room model uses.
+function applySeedState(room, seed) {
+  if (!seed || !Array.isArray(seed.queue)) return;
+
+  const queue = seed.queue
+    .filter((track) => track?.id && track?.title && track?.service)
+    .slice(0, MAX_SEED_TRACKS)
+    .map((track) => ({
+      id: String(track.id),
+      title: String(track.title),
+      artist: track.artist ? String(track.artist) : '',
+      thumbnail: track.thumbnail ? String(track.thumbnail) : '',
+      service: track.service === 'spotify' ? 'spotify' : 'youtube',
+      addedBy: track.addedBy ? String(track.addedBy) : '',
+    }));
+  if (queue.length === 0) return;
+
+  const index = Number(seed.currentIndex);
+  const position = Number(seed.position);
+
+  room.queue = queue;
+  room.currentIndex = Number.isInteger(index) && index >= 0 && index < queue.length ? index : 0;
+  room.currentService = seed.currentService === 'spotify' ? 'spotify' : 'youtube';
+  // Carry the playhead so the track picks up where the creator left off rather
+  // than restarting. syncedAt is now, so joiners compute drift from this moment.
+  room.position = Number.isFinite(position) && position > 0 ? position : 0;
+  room.isPlaying = !!seed.isPlaying;
+  room.syncedAt = Date.now();
+
+  // Resolve the audio URLs up front — the creator is mid-navigation and will ask
+  // for the current track a moment from now.
+  warmUpcomingTracks(room);
+}
+
+app.post('/rooms', async (req, res) => {
   const code = generateRoomCode();
-  await getRoom(`lt:${code}`); // reserve immediately so a concurrent POST can't collide
+  const room = await getRoom(`lt:${code}`); // reserve immediately so a concurrent POST can't collide
+  applySeedState(room, req.body?.seed);
   res.json({ code });
 });
 

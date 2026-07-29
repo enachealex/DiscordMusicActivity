@@ -103,6 +103,14 @@
 }
 .lt-leave:hover { background: #4a4b50; }
 
+.lt-carry-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #949ba4;
+  text-align: center;
+}
+
 .lt-divider {
   display: flex;
   align-items: center;

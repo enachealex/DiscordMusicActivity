@@ -42,6 +42,17 @@ export default function YouTubePlayer({
   const highShelfRef = useRef(null);
   const [needsInteraction, setNeedsInteraction] = useState(false);
 
+  // The media-event effect below is keyed to the track, so it must not re-run when
+  // the room changes — re-running would reload the audio and restart the song. That
+  // means its handlers close over whatever these were when the track started. Route
+  // them through a ref that every render refreshes, so "ended" acts on the current
+  // queue: without this, a track someone else queued mid-song is invisible at the
+  // end of playback and the DJ stops instead of advancing to it.
+  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync });
+  useEffect(() => {
+    latestRef.current = { isDJ, detached, loop, onSkip, onSync };
+  });
+
   function ensureAudioProcessing(audio) {
     if (!audio || sourceNodeRef.current) return;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -184,25 +195,28 @@ export default function YouTubePlayer({
       setNeedsInteraction(false);
       onPlayStateChange?.(true);
       onDebugEvent?.({ service: 'youtube', playerState: 'playing', autoplayBlocked: false, lastEvent: 'yt:play' });
-      if (isDJ || detached) {
-        onSync?.({ position: audio.currentTime || 0, isPlaying: true });
+      const { isDJ: dj, detached: det, onSync: sync } = latestRef.current;
+      if (dj || det) {
+        sync?.({ position: audio.currentTime || 0, isPlaying: true });
       }
     };
     const onPause = () => {
       onPlayStateChange?.(false);
       onDebugEvent?.({ service: 'youtube', playerState: 'paused', lastEvent: 'yt:pause' });
-      if (isDJ || detached) {
-        onSync?.({ position: audio.currentTime || 0, isPlaying: false });
+      const { isDJ: dj, detached: det, onSync: sync } = latestRef.current;
+      if (dj || det) {
+        sync?.({ position: audio.currentTime || 0, isPlaying: false });
       }
     };
     const onEnded = () => {
       onDebugEvent?.({ service: 'youtube', playerState: 'ended', lastEvent: 'yt:ended' });
-      if (loop === 'track') {
+      const { isDJ: dj, detached: det, loop: loopMode, onSkip: skip } = latestRef.current;
+      if (loopMode === 'track') {
         audio.currentTime = 0;
         audio.play().catch(() => setNeedsInteraction(true));
         return;
       }
-      if (isDJ || detached) onSkip?.();
+      if (dj || det) skip?.();
     };
     const onWaiting = () => {
       onDebugEvent?.({ service: 'youtube', playerState: 'buffering', lastEvent: 'yt:buffering' });

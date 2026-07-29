@@ -29,6 +29,10 @@ export default function PlayerControls({
   const preVolRef = useRef(volume || 0.7);
   const [showVolumePopup, setShowVolumePopup] = useState(false);
   const volControlRef = useRef(null);
+  const vol = Number.isFinite(volume) ? volume : 0.7;
+  // Muted means silent, not merely quiet. The slider steps in 0.02, so treating
+  // anything under 5% as muted made audible volumes show the muted icon.
+  const isMuted = vol <= 0;
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -46,10 +50,10 @@ export default function PlayerControls({
   }, []);
 
   function toggleMute() {
-    if (volume < 0.01) {
-      onVolumeChange?.(preVolRef.current > 0.01 ? preVolRef.current : 0.7);
+    if (isMuted) {
+      onVolumeChange?.(preVolRef.current > 0 ? preVolRef.current : 0.7);
     } else {
-      preVolRef.current = volume;
+      preVolRef.current = vol;
       onVolumeChange?.(0);
     }
   }
@@ -122,7 +126,7 @@ export default function PlayerControls({
             aria-label="Adjust volume"
             title="Adjust volume"
           >
-            {volume < 0.05 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+            {isMuted ? '🔇' : vol < 0.5 ? '🔉' : '🔊'}
           </button>
 
           {showVolumePopup && (
@@ -134,16 +138,16 @@ export default function PlayerControls({
                   min="0"
                   max="1"
                   step="0.02"
-                  value={volume ?? 0.7}
+                  value={vol}
                   onChange={(e) => onVolumeChange?.(parseFloat(e.target.value))}
                 />
               </div>
               <button
                 className="vol-mute-mini"
                 onClick={toggleMute}
-                title={volume < 0.01 ? 'Unmute' : 'Mute'}
+                title={isMuted ? 'Unmute' : 'Mute'}
               >
-                {volume < 0.01 ? 'Unmute' : 'Mute'}
+                {isMuted ? 'Unmute' : 'Mute'}
               </button>
             </div>
           )}

@@ -845,7 +845,19 @@ export default function App() {
             </button>
           )}
           {isWebMode ? (
-            <ListenTogether roomCode={roomCode} serverUrl={resolvedServerUrl} />
+            <ListenTogether
+              roomCode={roomCode}
+              serverUrl={resolvedServerUrl}
+              // Starting a party carries the solo session's music into the new
+              // room. Read live at click time so the playhead is accurate.
+              getSeedState={() => ({
+                queue: activeRoom?.queue || [],
+                currentIndex: activeRoom?.currentIndex ?? -1,
+                currentService: activeService,
+                position: playerActionsRef.current.getPosition?.() || 0,
+                isPlaying,
+              })}
+            />
           ) : (
             <>
               <DiscordParty

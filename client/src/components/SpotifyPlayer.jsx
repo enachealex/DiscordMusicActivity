@@ -27,6 +27,15 @@ export default function SpotifyPlayer({
   const [deviceId, setDeviceId] = useState(null);
   const [sdkReady, setSdkReady] = useState(false);
 
+  // player_state_changed is registered once, when the SDK connects, so anything it
+  // closes over stays frozen for the whole session. Read these through a ref that
+  // refreshes each render instead, so end-of-track advances against the current
+  // queue rather than the queue as it was at connect time.
+  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync });
+  useEffect(() => {
+    latestRef.current = { isDJ, detached, loop, onSkip, onSync };
+  });
+
   useEffect(() => {
     if (!spotifyToken) return;
     if (window.Spotify) { setSdkReady(true); return; }
@@ -99,13 +108,14 @@ export default function SpotifyPlayer({
         playerState: state.paused ? 'paused' : 'playing',
         lastEvent: `sp:state:${state.paused ? 'paused' : 'playing'}`,
       });
-      if ((isDJ || detached)) {
-        onSync?.({ position: state.position / 1000, isPlaying: !state.paused });
+      const { isDJ: dj, detached: det, loop: loopMode, onSkip: skip, onSync: sync } = latestRef.current;
+      if (dj || det) {
+        sync?.({ position: state.position / 1000, isPlaying: !state.paused });
         if (state.paused && state.position === 0 && state.track_window.previous_tracks.length) {
-          if (loop === 'track') {
+          if (loopMode === 'track') {
             player.seek(0).then(() => player.resume()).catch(() => {});
           } else {
-            onSkip?.();
+            skip?.();
           }
         }
       }
