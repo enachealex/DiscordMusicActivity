@@ -1,0 +1,48 @@
+.queue-memory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 0 14px;
+}
+
+.qm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.qm-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: #5865f2;
+  cursor: pointer;
+  margin: 0;
+}
+
+.qm-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #b5bac1;
+  text-transform: uppercase;
+}
+
+.qm-note {
+  font-size: 11px;
+  color: #72767d;
+}
+
+@media (max-width: 600px) {
+  .queue-memory {
+    gap: 4px;
+  }
+
+  .qm-toggle input {
+    width: 18px;
+    height: 18px;
+  }
+}

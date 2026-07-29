@@ -12,6 +12,14 @@ import ListenTogether from './components/ListenTogether.jsx';
 import EqSelector from './components/EqSelector.jsx';
 import DiscordParty from './components/DiscordParty.jsx';
 import InstallAppBanner from './components/InstallAppBanner.jsx';
+import QueueMemory from './components/QueueMemory.jsx';
+import {
+  isRememberQueueEnabled,
+  setRememberQueue,
+  loadRememberedQueue,
+  saveRememberedQueue,
+  clearRememberedQueue,
+} from './queueMemory.js';
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
@@ -76,8 +84,13 @@ export default function App() {
   const [claimRequest, setClaimRequest] = useState(null); // { claimerId, claimerUsername, countdown }
   const [claimPending, setClaimPending] = useState(null); // { claimerUsername, countdown } 
   const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
+  // Web solo sessions can keep their queue in this browser between visits.
+  const [rememberQueue, setRememberQueueState] = useState(() => isWebMode && isRememberQueueEnabled());
   const socketRef = useRef(null);
   const preloadedYoutubeIdsRef = useRef(new Set());
+  // Whether this session has ever held tracks — distinguishes "empty because we just
+  // connected" from "empty because the listener cleared it".
+  const sawTracksRef = useRef(false);
   const resolvedServerUrl = useMemo(() => {
     const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocalHost) return window.location.origin;
@@ -366,6 +379,9 @@ export default function App() {
   // Socket connection. Re-runs when the effective room changes (e.g. a Discord user
   // joins/leaves a Listen Together party), reconnecting in place without a page reload.
   const effectiveChannelId = discordPartyCode ? `lt:${discordPartyCode}` : defaultChannelId;
+  // Queue memory applies to a private web session only. A party's queue belongs to
+  // the party, and Discord rooms are the voice channel's, not this browser's.
+  const isSoloWebSession = isWebMode && !!effectiveChannelId && effectiveChannelId.startsWith('solo:');
   useEffect(() => {
     if (!user || !effectiveChannelId) return;
     // Clear any prior room state so switching parties doesn't flash stale tracks.
@@ -378,7 +394,19 @@ export default function App() {
       transports: ['polling', 'websocket'],
       query: { channelId: effectiveChannelId, userId: user.id, username: user.username },
     });
-    socket.on('room:state', setRoom);
+    // A per-tab session id means a returning visitor lands in a brand new, empty
+    // room. If this browser remembered a queue, hand it back on the first state we
+    // receive. Guarded to one attempt so later updates can't re-restore over live
+    // changes; the server also refuses unless the room is still empty.
+    let restoreAttempted = false;
+    socket.on('room:state', (state) => {
+      setRoom(state);
+      if (restoreAttempted) return;
+      restoreAttempted = true;
+      if (!isSoloWebSession || (state?.queue?.length ?? 0) > 0) return;
+      const remembered = loadRememberedQueue();
+      if (remembered) socket.emit('queue:restore', remembered);
+    });
     socket.on('dj:changed', ({ djUserId }) =>
       setRoom((prev) => (prev ? { ...prev, djUserId } : prev))
     );
@@ -406,7 +434,45 @@ export default function App() {
       socket.disconnect();
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [user, effectiveChannelId, resolvedServerUrl]);
+  }, [user, effectiveChannelId, resolvedServerUrl, isSoloWebSession]);
+
+  // Keep this browser's copy of the solo queue current. Writing on queue changes
+  // (rather than on every progress tick) keeps localStorage writes rare; the
+  // pagehide handler catches the playback position on the way out.
+  useEffect(() => {
+    if (!isSoloWebSession || !rememberQueue || !room) return;
+    const tracks = room.queue || [];
+    if (tracks.length > 0) {
+      sawTracksRef.current = true;
+    } else if (!sawTracksRef.current) {
+      // Still the empty room we connected to — the remembered queue may not have
+      // been restored into it yet, so leave storage alone.
+      return;
+    }
+    const persist = () => {
+      if ((room.queue || []).length === 0) {
+        // Emptied on purpose during this session; forget it.
+        clearRememberedQueue();
+        return;
+      }
+      saveRememberedQueue({
+        queue: room.queue,
+        currentIndex: room.currentIndex ?? 0,
+        currentService: room.currentService,
+        position: playerActionsRef.current.getPosition?.() || 0,
+      });
+    };
+    persist();
+    window.addEventListener('pagehide', persist);
+    return () => window.removeEventListener('pagehide', persist);
+  }, [isSoloWebSession, rememberQueue, room?.queue, room?.currentIndex, room?.currentService]);
+
+  function handleRememberQueueChange(next) {
+    setRememberQueueState(next);
+    // Writes the preference, and erases the stored queue when switched off.
+    setRememberQueue(next);
+    if (!next) clearRememberedQueue();
+  }
 
   const activeRoom = detached ? (detachedRoom ?? cloneRoomState(room)) : room;
   const currentTrack = activeRoom?.queue?.[activeRoom.currentIndex] ?? null;
@@ -981,6 +1047,14 @@ export default function App() {
 
         {isWebMode && activeService === 'youtube' && (
           <EqSelector value={eqMode} onChange={setEqMode} />
+        )}
+
+        {isSoloWebSession && (
+          <QueueMemory
+            enabled={rememberQueue}
+            onChange={handleRememberQueueChange}
+            trackCount={activeRoom?.queue?.length || 0}
+          />
         )}
 
         <div className="app-queue-slot">

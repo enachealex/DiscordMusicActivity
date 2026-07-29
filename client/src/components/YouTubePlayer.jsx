@@ -48,9 +48,9 @@ export default function YouTubePlayer({
   // them through a ref that every render refreshes, so "ended" acts on the current
   // queue: without this, a track someone else queued mid-song is invisible at the
   // end of playback and the DJ stops instead of advancing to it.
-  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync });
+  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying });
   useEffect(() => {
-    latestRef.current = { isDJ, detached, loop, onSkip, onSync };
+    latestRef.current = { isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying };
   });
 
   function ensureAudioProcessing(audio) {
@@ -61,6 +61,18 @@ export default function YouTubePlayer({
     try {
       const ctx = audioContextRef.current || new AudioCtx();
       audioContextRef.current = ctx;
+
+      // createMediaElementSource takes the element off the speakers and routes it
+      // into this graph — so attaching it to a context that isn't running produces
+      // total silence while the element still reports itself as playing. Browsers
+      // start a context suspended until the page has been interacted with, which is
+      // exactly the state someone is in the moment they join a room. Leave the
+      // element on the direct path for now; attachAudioProcessingOnGesture() wires
+      // the DSP up as soon as the context can actually run.
+      if (ctx.state !== 'running') {
+        ctx.resume?.().catch(() => {});
+        return;
+      }
 
       const source = ctx.createMediaElementSource(audio);
       // Two-band shelving EQ (bass / treble). Defaults to 0 dB (flat) so the chain is
@@ -263,6 +275,38 @@ export default function YouTubePlayer({
   useEffect(() => {
     applyEq(eqMode);
   }, [eqMode]);
+
+  // An AudioContext can only start once the page has been interacted with, so the
+  // EQ/compressor chain can't be attached at load. Watch for the first interaction
+  // anywhere — always, not only when playback was visibly blocked — then start the
+  // context, attach the DSP, and pick up playback if the room is already playing.
+  useEffect(() => {
+    const onFirstGesture = () => {
+      const audio = audioRef.current;
+      const ctx = audioContextRef.current;
+      const attach = () => {
+        if (audio) ensureAudioProcessing(audio);
+      };
+      if (ctx?.state === 'suspended') {
+        ctx.resume().then(attach).catch(() => {});
+      } else {
+        attach();
+      }
+      // A joiner whose autoplay was refused is sitting on a silent player; this is
+      // the gesture that lets it start.
+      if (audio && audio.paused && latestRef.current.roomIsPlaying) {
+        tryPlayWithRecovery();
+      }
+    };
+    window.addEventListener('pointerdown', onFirstGesture, { once: true });
+    window.addEventListener('keydown', onFirstGesture, { once: true });
+    window.addEventListener('touchstart', onFirstGesture, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', onFirstGesture);
+      window.removeEventListener('keydown', onFirstGesture);
+      window.removeEventListener('touchstart', onFirstGesture);
+    };
+  }, []);
 
   // Some embedded Discord sessions block autoplay with sound until user gesture.
   useEffect(() => {

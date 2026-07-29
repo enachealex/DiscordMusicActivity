@@ -324,6 +324,31 @@ io.on('connection', async (socket) => {
     socket.to(channelId).emit('room:state', { ...room });
   });
 
+  // A returning solo listener restoring the queue their own browser remembered.
+  // Restricted to solo rooms — a shared party's queue belongs to the party, not to
+  // whoever reconnects first — and only into a room that is still empty, so it can
+  // never overwrite live state (e.g. a second tab that already restored).
+  socket.on('queue:restore', (payload) => {
+    if (!channelId.startsWith('solo:')) return;
+    if (room.queue.length > 0) return;
+
+    const queue = sanitizeTrackList(payload?.queue);
+    if (queue.length === 0) return;
+
+    const index = Number(payload?.currentIndex);
+    const position = Number(payload?.position);
+    room.queue = queue;
+    room.currentIndex = Number.isInteger(index) && index >= 0 && index < queue.length ? index : 0;
+    room.currentService = payload?.currentService === 'spotify' ? 'spotify' : 'youtube';
+    room.position = Number.isFinite(position) && position > 0 ? position : 0;
+    // Never auto-start: returning to a tab shouldn't blast music, and browsers
+    // would refuse the playback anyway without an interaction.
+    room.isPlaying = false;
+    room.syncedAt = Date.now();
+    io.to(channelId).emit('room:state', { ...room });
+    warmUpcomingTracks(room);
+  });
+
   // Only the DJ can switch services
   socket.on('service:switch', (service) => {
     if (userId !== room.djUserId) return;
@@ -593,13 +618,11 @@ function generateRoomCode() {
 // Upper bound on a seeded queue — the payload is client-supplied, so cap it.
 const MAX_SEED_TRACKS = 300;
 
-// Copies a solo listener's current queue into the room they're creating, so starting
-// a party doesn't throw away what they were already playing. Everything here comes
-// from the browser, so keep only the fields the room model uses.
-function applySeedState(room, seed) {
-  if (!seed || !Array.isArray(seed.queue)) return;
-
-  const queue = seed.queue
+// Tracks arriving from a browser (party seed, or a restored queue) are untrusted:
+// keep only the fields the room model uses and bound the length.
+function sanitizeTrackList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
     .filter((track) => track?.id && track?.title && track?.service)
     .slice(0, MAX_SEED_TRACKS)
     .map((track) => ({
@@ -610,6 +633,14 @@ function applySeedState(room, seed) {
       service: track.service === 'spotify' ? 'spotify' : 'youtube',
       addedBy: track.addedBy ? String(track.addedBy) : '',
     }));
+}
+
+// Copies a solo listener's current queue into the room they're creating, so starting
+// a party doesn't throw away what they were already playing.
+function applySeedState(room, seed) {
+  if (!seed) return;
+
+  const queue = sanitizeTrackList(seed.queue);
   if (queue.length === 0) return;
 
   const index = Number(seed.currentIndex);
