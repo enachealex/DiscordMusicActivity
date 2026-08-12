@@ -266,20 +266,35 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
   }
 
   try {
-    const { audioUrl } = await resolveAudioUrl(videoId);
-
     // Proxy the audio stream from YouTube to the client
     const headers = {};
     if (req.headers.range) {
       headers.Range = req.headers.range;
     }
 
-    const response = await axios.get(audioUrl, {
-      responseType: 'stream',
-      headers,
-      // Long tracks can exceed 30s; disable axios timeout for streaming.
-      timeout: 0,
-    });
+    const openUpstream = async () => {
+      const { audioUrl } = await resolveAudioUrl(videoId);
+      return axios.get(audioUrl, {
+        responseType: 'stream',
+        headers,
+        // Long tracks can exceed 30s; disable axios timeout for streaming.
+        timeout: 0,
+      });
+    };
+
+    let response;
+    try {
+      response = await openUpstream();
+    } catch (err) {
+      // A signed URL that has expired (or been invalidated) answers 403/410. The
+      // browser re-requests ranges throughout a track, so this lands mid-song and
+      // the player sees a broken stream. Re-resolve once and carry on — the
+      // listener shouldn't hear anything at all.
+      if (err?.response?.status !== 403 && err?.response?.status !== 410) throw err;
+      console.warn(`Audio URL for ${videoId} rejected (${err.response.status}); re-resolving`);
+      audioUrlCache.delete(videoId);
+      response = await openUpstream();
+    }
 
     // Forward status and relevant headers
     res.status(response.status);

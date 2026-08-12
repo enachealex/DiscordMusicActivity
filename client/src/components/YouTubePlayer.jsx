@@ -11,6 +11,10 @@ function thumbSrc(url) {
 
 // EQ presets applied via two shelving BiquadFilters (low shelf = bass, high shelf =
 // treble), in dB. Web-only feature; 'flat' is a no-op so Discord stays uncolored.
+// Cap on in-place stream recoveries per track, so a video that genuinely cannot be
+// streamed can't loop forever re-fetching itself.
+const MAX_STREAM_RECOVERIES = 3;
+
 const EQ_PRESETS = {
   flat: { bass: 0, treble: 0 },
   bass: { bass: 6, treble: 0 },
@@ -34,6 +38,9 @@ export default function YouTubePlayer({
   const audioRef = useRef(null);
   const syncTimerRef = useRef(null);
   const retryCountRef = useRef(0);
+  // Position to resume from after re-fetching a stream that died mid-track.
+  const resumeAtRef = useRef(null);
+  const recoveryCountRef = useRef(0);
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const compressorNodeRef = useRef(null);
@@ -207,20 +214,47 @@ export default function YouTubePlayer({
     }
 
     retryCountRef.current = 0;
+    resumeAtRef.current = null;
+    recoveryCountRef.current = 0;
     ensureAudioProcessing(audio);
     registerActions(audio);
     audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
     audio.load();
 
     const onLoadedMetadata = () => {
-      const startSeconds = detached
-        ? 0
-        : Math.floor(room.position + (room.isPlaying ? (Date.now() - room.syncedAt) / 1000 : 0));
+      // A stream recovery sets resumeAtRef so we return to where the audio cut out
+      // rather than to the room position, which is only right at track start.
+      const startSeconds =
+        resumeAtRef.current !== null
+          ? resumeAtRef.current
+          : detached
+            ? 0
+            : Math.floor(room.position + (room.isPlaying ? (Date.now() - room.syncedAt) / 1000 : 0));
+      const resuming = resumeAtRef.current !== null;
+      resumeAtRef.current = null;
       if (Number.isFinite(audio.duration)) {
         audio.currentTime = Math.max(0, Math.min(audio.duration, startSeconds));
       }
       onDebugEvent?.({ service: 'youtube', playerState: 'ready', lastEvent: 'yt:audio-metadata' });
-      if (room.isPlaying) tryPlayWithRecovery();
+      if (resuming || room.isPlaying) tryPlayWithRecovery();
+    };
+
+    // YouTube's signed URLs expire, and the server can only answer an expired one
+    // with an error. To the media element a stream that stops early is
+    // indistinguishable from the file ending, so it fires 'ended' mid-song. Acting
+    // on that skips the track — and on the last track queue:skip wraps to index 0,
+    // which is the "stopped playing and jumped back to the top" people see. Reload
+    // the track (?fresh=1 forces a new URL) and carry on from where it cut out.
+    const recoverTruncatedStream = () => {
+      recoveryCountRef.current += 1;
+      resumeAtRef.current = audio.currentTime;
+      onDebugEvent?.({
+        service: 'youtube',
+        playerState: 'recovering',
+        lastEvent: `yt:stream-truncated@${Math.round(audio.currentTime)}s`,
+      });
+      audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}?fresh=1`;
+      audio.load();
     };
     const onPlay = () => {
       setNeedsInteraction(false);
@@ -240,6 +274,14 @@ export default function YouTubePlayer({
       }
     };
     const onEnded = () => {
+      // Ended well short of the end means the stream was cut off, not that the song
+      // finished. Recover in place instead of advancing the queue.
+      const dur = audio.duration;
+      const endedEarly = Number.isFinite(dur) && dur > 0 && dur - audio.currentTime > 3;
+      if (endedEarly && recoveryCountRef.current < MAX_STREAM_RECOVERIES) {
+        recoverTruncatedStream();
+        return;
+      }
       onDebugEvent?.({ service: 'youtube', playerState: 'ended', lastEvent: 'yt:ended' });
       const { isDJ: dj, detached: det, loop: loopMode, onSkip: skip } = latestRef.current;
       if (loopMode === 'track') {
@@ -259,6 +301,10 @@ export default function YouTubePlayer({
       // evict any stale yt-dlp URL and re-resolve before streaming.
       if (retryCountRef.current < 1) {
         retryCountRef.current++;
+        // Keep the spot: an expired URL can fail partway through a song, and
+        // restarting from zero is as jarring as stopping.
+        const failedAt = audio.currentTime;
+        if (failedAt > 0) resumeAtRef.current = failedAt;
         setTimeout(() => {
           const a = audioRef.current;
           if (!a || !track) return;
