@@ -24,15 +24,38 @@ export default function PlayerControls({
   currentTrack,
 }) {
   const canControl = isDJ || detached;
-  const pct = duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
+  const seekable = canControl && !!currentTrack && duration > 0;
   const remaining = duration > 0 ? Math.max(0, duration - progress) : 0;
   const preVolRef = useRef(volume || 0.7);
   const [showVolumePopup, setShowVolumePopup] = useState(false);
   const volControlRef = useRef(null);
+  const trackRef = useRef(null);
+  // Position being dragged to, 0–1. Null when the thumb isn't being held.
+  const [dragRatio, setDragRatio] = useState(null);
+  // Where a just-released drag asked to go. `progress` only refreshes twice a
+  // second, so without this the thumb snaps back to the old spot for a moment.
+  const [pendingRatio, setPendingRatio] = useState(null);
   const vol = Number.isFinite(volume) ? volume : 0.7;
   // Muted means silent, not merely quiet. The slider steps in 0.02, so treating
   // anything under 5% as muted made audible volumes show the muted icon.
   const isMuted = vol <= 0;
+
+  const livePct = duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
+  const activeRatio = dragRatio ?? pendingRatio;
+  const pct = activeRatio !== null ? activeRatio * 100 : livePct;
+  const scrubSeconds = activeRatio !== null ? activeRatio * duration : progress;
+
+  // Hand control back to the live position once playback has caught up with the
+  // seek (or shortly after, if it never reports arriving).
+  useEffect(() => {
+    if (pendingRatio === null) return;
+    if (Math.abs(progress - pendingRatio * duration) < 1.5) {
+      setPendingRatio(null);
+      return;
+    }
+    const timer = setTimeout(() => setPendingRatio(null), 1500);
+    return () => clearTimeout(timer);
+  }, [pendingRatio, progress, duration]);
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -58,21 +81,85 @@ export default function PlayerControls({
     }
   }
 
-  function handleProgressClick(e) {
-    if (!canControl || !currentTrack || duration <= 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  function ratioFromPointer(e) {
+    const rect = trackRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  }
+
+  // Pointer events cover mouse, touch and pen with one path. Capturing the pointer
+  // keeps the drag alive when the finger slides off the bar, which on a 6px-tall
+  // track is most of the time.
+  function handlePointerDown(e) {
+    if (!seekable) return;
+    e.preventDefault();
+    try {
+      trackRef.current?.setPointerCapture?.(e.pointerId);
+    } catch {
+      // Capture is an optimisation; the drag still tracks without it.
+    }
+    setDragRatio(ratioFromPointer(e));
+  }
+
+  function handlePointerMove(e) {
+    if (dragRatio === null) return;
+    setDragRatio(ratioFromPointer(e));
+  }
+
+  function handlePointerUp(e) {
+    if (dragRatio === null) return;
+    const ratio = ratioFromPointer(e);
+    try {
+      trackRef.current?.releasePointerCapture?.(e.pointerId);
+    } catch {
+      // Already released (e.g. pointercancel) — nothing to undo.
+    }
+    setDragRatio(null);
+    setPendingRatio(ratio);
     onSeek?.(ratio * duration);
+  }
+
+  // A tap is a zero-distance drag, so click-to-seek still works via the same path.
+  function handleTrackKeyDown(e) {
+    if (!seekable) return;
+    const step = e.shiftKey ? 30 : 5;
+    let target = null;
+    if (e.key === 'ArrowRight') target = Math.min(duration, progress + step);
+    else if (e.key === 'ArrowLeft') target = Math.max(0, progress - step);
+    else if (e.key === 'Home') target = 0;
+    else if (e.key === 'End') target = duration;
+    if (target === null) return;
+    e.preventDefault();
+    setPendingRatio(duration > 0 ? target / duration : 0);
+    onSeek?.(target);
   }
 
   return (
     <div className={`player-bar${expanded ? ' expanded' : ''}`}>
       <div
-        className={`progress-track${canControl && currentTrack ? ' seekable' : ''}`}
-        onClick={handleProgressClick}
-        title={canControl && currentTrack ? 'Click to seek' : ''}
+        ref={trackRef}
+        className={`progress-track${seekable ? ' seekable' : ''}${dragRatio !== null ? ' dragging' : ''}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onKeyDown={handleTrackKeyDown}
+        title={seekable ? 'Drag to seek' : ''}
+        role={seekable ? 'slider' : undefined}
+        tabIndex={seekable ? 0 : undefined}
+        aria-label={seekable ? 'Playback position' : undefined}
+        aria-valuemin={seekable ? 0 : undefined}
+        aria-valuemax={seekable ? Math.floor(duration) : undefined}
+        aria-valuenow={seekable ? Math.floor(scrubSeconds) : undefined}
+        aria-valuetext={seekable ? formatTime(scrubSeconds) : undefined}
       >
         <div className="progress-fill" style={{ width: `${pct}%` }} />
+        {seekable && <div className="progress-thumb" style={{ left: `${pct}%` }} />}
+        {dragRatio !== null && (
+          <div className="progress-tooltip" style={{ left: `${pct}%` }}>
+            {formatTime(scrubSeconds)}
+          </div>
+        )}
       </div>
 
       <div className="controls-row">

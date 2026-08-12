@@ -225,20 +225,27 @@ youtubeRouter.get('/search', async (req, res) => {
         q: String(q),
         type: 'video',
         videoCategoryId: '10', // Music
-        maxResults: 25,
+        // A few extra to absorb the non-video items filtered out below, so a full
+        // page of 25 still comes back.
+        maxResults: 30,
         key: YOUTUBE_API_KEY,
       },
     });
 
-    const results = data.items.map((item) => ({
-      id: item.id.videoId,
-      title: decodeHtmlEntities(item.snippet.title),
-      artist: decodeHtmlEntities(item.snippet.channelTitle),
-      thumbnail: proxiedThumb(
-        item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url
-      ),
-      service: 'youtube',
-    }));
+    const results = data.items
+      // Despite type=video, YouTube slips in channel results, which have no
+      // videoId. Those rendered as rows that silently did nothing when added.
+      .filter((item) => item?.id?.videoId)
+      .slice(0, 25)
+      .map((item) => ({
+        id: item.id.videoId,
+        title: decodeHtmlEntities(item.snippet.title),
+        artist: decodeHtmlEntities(item.snippet.channelTitle),
+        thumbnail: proxiedThumb(
+          item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url
+        ),
+        service: 'youtube',
+      }));
 
     res.json(results);
   } catch (err) {

@@ -957,10 +957,75 @@ body {
   border-top: 1px solid var(--border);
   padding-bottom: 6px;
 }
-.progress-track { height: 3px; background: var(--border); }
-.progress-track.seekable { cursor: pointer; height: 6px; transition: height 0.1s; }
-.progress-track.seekable:hover { height: 8px; }
+.progress-track { position: relative; height: 3px; background: var(--border); }
+.progress-track.seekable {
+  cursor: pointer;
+  height: 6px;
+  transition: height 0.1s;
+  /* Required for pointer dragging on touch: without it the browser claims the
+     gesture as a scroll and the drag never reaches us. */
+  touch-action: none;
+}
+.progress-track.seekable:hover,
+.progress-track.dragging { height: 8px; }
+.progress-track.seekable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Finger-sized grab area without thickening the bar itself. */
+.progress-track.seekable::before {
+  content: '';
+  position: absolute;
+  inset: -9px 0;
+}
+
 .progress-fill { height: 100%; background: var(--accent); transition: width 0.5s linear; }
+/* The 0.5s ease is there to smooth the twice-a-second progress ticks; during a
+   drag it would make the bar lag behind the thumb. */
+.progress-track.dragging .progress-fill { transition: none; }
+
+.progress-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  transform: translateY(-50%);
+  transition: transform 0.12s ease, width 0.5s linear, left 0.5s linear;
+  pointer-events: none;
+}
+.progress-track.seekable:hover .progress-thumb { transform: translateY(-50%) scale(1.2); }
+.progress-track.dragging .progress-thumb {
+  transform: translateY(-50%) scale(1.35);
+  transition: transform 0.12s ease;
+}
+
+.progress-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #18191c;
+  border: 1px solid var(--border);
+  color: #f2f3f5;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+}
+.progress-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -4px;
+  border: 4px solid transparent;
+  border-top-color: var(--border);
+}
 .controls-row {
   display: flex;
   align-items: center;
@@ -1707,6 +1772,12 @@ body {
     flex: 1 1 auto;
     min-width: 110px;
   }
+
+  /* Bigger target and thumb for fingers. */
+  .progress-track.seekable { height: 8px; }
+  .progress-track.seekable::before { inset: -14px 0; }
+  .progress-thumb { width: 16px; height: 16px; margin-left: -8px; }
+  .progress-tooltip { font-size: 12px; padding: 4px 9px; }
 
   .player-bar .controls-row {
     flex-wrap: nowrap;
