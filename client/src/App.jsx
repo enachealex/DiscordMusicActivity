@@ -23,6 +23,18 @@ import {
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID || '1492382387139772476';
 
+// Slider position -> actual gain. Squared, so halfway down the slider is a quarter
+// of the amplitude rather than half — much closer to how loudness is heard, and it
+// makes the bottom of the range genuinely quiet instead of merely small.
+const VOLUME_CURVE = 2;
+// Chosen so the default still *sounds* like the previous linear 0.7.
+const DEFAULT_VOLUME_POSITION = 0.84;
+
+function gainFromPosition(position) {
+  const clamped = Math.max(0, Math.min(1, Number(position) || 0));
+  return clamped ** VOLUME_CURVE;
+}
+
 let discordSdk = null;
 try {
   discordSdk = new DiscordSDK(DISCORD_CLIENT_ID);
@@ -69,7 +81,18 @@ export default function App() {
   const [loop, setLoop] = useState('off'); // 'off' | 'track' | 'queue'
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(0.7);
+  // The slider holds a *position*, not a gain. Loudness is perceived roughly
+  // logarithmically, so a linear slider puts almost the entire usable quiet range
+  // in its bottom few percent — which is why "I can't get it quiet enough" is a
+  // real complaint even though 2% was always reachable. Squaring the position
+  // spreads the quiet end across most of the travel.
+  const [volume, setVolume] = useState(() => {
+    const saved = parseFloat(localStorage.getItem('volume-position'));
+    return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : DEFAULT_VOLUME_POSITION;
+  });
+  // Loudness smoothing (the compressor + makeup gain in the audio graph). On by
+  // default, which is how it has always behaved; the control just makes it visible.
+  const [balance, setBalance] = useState(() => localStorage.getItem('balance-mode') !== 'off');
   const [debugInfo, setDebugInfo] = useState({
     service: '-',
     playerState: '-',
@@ -856,15 +879,34 @@ export default function App() {
     socketRef.current?.emit('dj:claim-cancel');
     setClaimPending(null);
   }
-  function handlePlayerReady(actions) { playerActionsRef.current = actions; }
+  function handlePlayerReady(actions) {
+    playerActionsRef.current = actions;
+    // Push the current level at the new player. Without this the UI showed a
+    // volume the player had never been told about — it ran at full until the
+    // slider was touched, so the displayed level was a lie on every fresh load.
+    actions.setVolume?.(gainFromPosition(volume));
+  }
+
+  function handleBalanceToggle() {
+    setBalance((previous) => {
+      const next = !previous;
+      localStorage.setItem('balance-mode', next ? 'on' : 'off');
+      return next;
+    });
+  }
   function handlePlayToggle() { playerActionsRef.current.toggle(); }
   function handleSeek(s) {
     playerActionsRef.current.seek?.(s);
     syncPlayer({ position: s, isPlaying: localPlaying });
   }
-  function handleVolumeChange(v) {
-    setVolume(v);
-    playerActionsRef.current.setVolume?.(v);
+  function handleVolumeChange(position) {
+    setVolume(position);
+    try {
+      localStorage.setItem('volume-position', String(position));
+    } catch {
+      // Private mode / quota — the level just won't persist.
+    }
+    playerActionsRef.current.setVolume?.(gainFromPosition(position));
   }
   function handleDebugEvent(patch) {
     setDebugInfo((prev) => ({
@@ -996,6 +1038,7 @@ export default function App() {
               onPlayStateChange={setLocalPlaying}
               onDebugEvent={handleDebugEvent}
               eqMode={isWebMode ? eqMode : 'flat'}
+              balance={balance}
             />
           ) : spotifyToken ? (
             <SpotifyPlayer
@@ -1077,6 +1120,11 @@ export default function App() {
           isDJ={isDJ}
           detached={detached}
           volume={volume}
+          balance={balance}
+          onBalanceToggle={handleBalanceToggle}
+          // Balance lives in our own audio graph; Spotify plays through its SDK,
+          // which we don't route, so the control would do nothing there.
+          balanceAvailable={activeService === 'youtube'}
           expanded={isMobileLayout || !showDebug}
           shuffle={shuffle}
           loop={loop}

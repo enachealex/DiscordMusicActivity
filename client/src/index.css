@@ -1060,8 +1060,11 @@ body {
   position: absolute;
   right: -8px;
   bottom: calc(100% + 8px);
-  width: 42px;
-  height: 136px;
+  /* Wide enough for the percentage readout and the Balance toggle; the old 42px
+     column fit nothing but the slider. */
+  width: 96px;
+  height: 190px;
+  gap: 6px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface2);
@@ -1112,15 +1115,52 @@ body {
   cursor: pointer;
 }
 
+.vol-readout {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Balance: bright blue when on, grey when off, darker blue under the cursor. */
+.vol-balance-btn {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.vol-balance-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.vol-balance-btn:hover,
+.vol-balance-btn.active:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #fff;
+}
+
 .vol-mute-mini {
+  width: 100%;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  border-radius: 5px;
-  font-size: 9px;
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  padding: 3px 5px;
+  padding: 7px 6px;
   cursor: pointer;
 }
 .vol-mute-mini:hover {
@@ -1802,6 +1842,13 @@ body {
 
   .player-bar .vol-popup {
     right: -4px;
+  }
+
+  /* Finger-sized targets in the volume popup. */
+  .vol-balance-btn,
+  .vol-mute-mini {
+    min-height: 36px;
+    font-size: 12px;
   }
 
   .playlist-song-item {

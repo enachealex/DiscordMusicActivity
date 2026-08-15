@@ -22,6 +22,9 @@ export default function PlayerControls({
   onSeek,
   onVolumeChange,
   currentTrack,
+  balance = true,
+  onBalanceToggle,
+  balanceAvailable = true,
 }) {
   const canControl = isDJ || detached;
   const seekable = canControl && !!currentTrack && duration > 0;
@@ -218,14 +221,16 @@ export default function PlayerControls({
 
           {showVolumePopup && (
             <div className="vol-popup" onClick={(e) => e.stopPropagation()}>
+              <div className="vol-readout">{isMuted ? 'Muted' : `${Math.round(vol * 100)}%`}</div>
               <div className="vol-slider-wrap">
                 <input
                   type="range"
                   className="vol-slider-vertical"
                   min="0"
                   max="1"
-                  step="0.02"
+                  step="0.01"
                   value={vol}
+                  aria-label="Volume"
                   onChange={(e) => onVolumeChange?.(parseFloat(e.target.value))}
                 />
               </div>
@@ -236,6 +241,20 @@ export default function PlayerControls({
               >
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
+              {balanceAvailable && (
+                <button
+                  className={`vol-balance-btn${balance ? ' active' : ''}`}
+                  onClick={onBalanceToggle}
+                  aria-pressed={balance}
+                  title={
+                    balance
+                      ? 'Balance on — evens out loud and quiet parts between tracks. Click to turn off.'
+                      : 'Balance off — tracks play at their original dynamics. Click to turn on.'
+                  }
+                >
+                  Balance
+                </button>
+              )}
             </div>
           )}
         </div>

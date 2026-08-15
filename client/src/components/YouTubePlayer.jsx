@@ -29,6 +29,7 @@ export default function YouTubePlayer({
   detached,
   loop,
   eqMode = 'flat',
+  balance = true,
   onSync,
   onSkip,
   onPlayerReady,
@@ -55,9 +56,9 @@ export default function YouTubePlayer({
   // them through a ref that every render refreshes, so "ended" acts on the current
   // queue: without this, a track someone else queued mid-song is invisible at the
   // end of playback and the DJ stops instead of advancing to it.
-  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying });
+  const latestRef = useRef({ isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying, balance });
   useEffect(() => {
-    latestRef.current = { isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying };
+    latestRef.current = { isDJ, detached, loop, onSkip, onSync, roomIsPlaying: !!room?.isPlaying, balance };
   });
 
   function ensureAudioProcessing(audio) {
@@ -96,13 +97,10 @@ export default function YouTubePlayer({
       const compressor = ctx.createDynamicsCompressor();
       const outputGain = ctx.createGain();
 
-      // Gentle loudness smoothing: reduce sudden peaks while keeping tone natural.
-      compressor.threshold.value = -22;
+      // Timing is fixed; how hard it works is the Balance control (applyBalance).
       compressor.knee.value = 24;
-      compressor.ratio.value = 2.5;
       compressor.attack.value = 0.004;
       compressor.release.value = 0.25;
-      outputGain.gain.value = 1.06;
 
       source.connect(lowShelf);
       lowShelf.connect(highShelf);
@@ -116,6 +114,7 @@ export default function YouTubePlayer({
       compressorNodeRef.current = compressor;
       outputGainNodeRef.current = outputGain;
       applyEq(eqMode);
+      applyBalance();
       onDebugEvent?.({ service: 'youtube', lastEvent: 'yt:dsp-enabled' });
     } catch {
       // WebAudio setup can fail in restrictive embeds; fallback to regular element audio.
@@ -132,6 +131,25 @@ export default function YouTubePlayer({
     const t = ctx.currentTime;
     low.gain.setTargetAtTime(preset.bass, t, 0.05);
     high.gain.setTargetAtTime(preset.treble, t, 0.05);
+  }
+
+  // Balance = the loudness smoothing in the chain. On, it pulls peaks down and lifts
+  // the makeup gain so tracks sit at a similar level; off, the compressor is made
+  // transparent (ratio 1 is no gain reduction) and the signal passes at unity.
+  //
+  // Ramped rather than rewired: reconnecting nodes mid-playback clicks audibly.
+  // Read through latestRef because the graph can be built later, from a gesture
+  // handler that closed over an older value.
+  function applyBalance() {
+    const compressor = compressorNodeRef.current;
+    const outputGain = outputGainNodeRef.current;
+    const ctx = audioContextRef.current;
+    if (!compressor || !outputGain || !ctx) return;
+    const on = latestRef.current.balance !== false;
+    const t = ctx.currentTime;
+    compressor.threshold.setTargetAtTime(on ? -22 : 0, t, 0.05);
+    compressor.ratio.setTargetAtTime(on ? 2.5 : 1, t, 0.05);
+    outputGain.gain.setTargetAtTime(on ? 1.06 : 1, t, 0.05);
   }
 
   function resumeAudioProcessingContext() {
@@ -340,6 +358,10 @@ export default function YouTubePlayer({
   useEffect(() => {
     applyEq(eqMode);
   }, [eqMode]);
+
+  useEffect(() => {
+    applyBalance();
+  }, [balance]);
 
   // An AudioContext can only start once the page has been interacted with, so the
   // EQ/compressor chain can't be attached at load. Watch for the first interaction
