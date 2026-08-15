@@ -15,6 +15,17 @@ const AUDIO_URL_TTL_MS = 55 * 60 * 1000; // YouTube signed URLs last ~6h; 55 min
 const audioUrlCache = new Map();
 const inflightAudioUrlResolves = new Map();
 
+// The binary to shell out to. Overridable so a host can point at a specific
+// build (e.g. one inside a virtualenv) without editing code.
+const YTDLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
+// A yt-dlp run that hasn't produced a URL by now is not going to. Without this,
+// a stalled process holds its concurrency slot forever and eventually wedges all
+// audio playback — see acquireYtdlpSlot.
+const YTDLP_TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 25000);
+// How long a request will wait for a free slot before giving up. Failing one
+// request is far better than queueing every future one behind a stuck run.
+const YTDLP_SLOT_WAIT_MS = Number(process.env.YTDLP_SLOT_WAIT_MS || 20000);
+
 // ── yt-dlp concurrency limiter ──────────────────────────────────────────────
 // Prevents hammering YouTube / the server when many tracks are warmed at once.
 const MAX_CONCURRENT_YTDLP = 4;
@@ -22,23 +33,38 @@ let activeYtdlpCount = 0;
 const ytdlpWaitQueue = [];
 
 function acquireYtdlpSlot() {
-  return new Promise((resolve) => {
-    if (activeYtdlpCount < MAX_CONCURRENT_YTDLP) {
-      activeYtdlpCount++;
+  if (activeYtdlpCount < MAX_CONCURRENT_YTDLP) {
+    activeYtdlpCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const waiter = { settled: false, timer: null };
+    waiter.grant = () => {
+      if (waiter.settled) return false; // timed out already; slot goes to the next
+      waiter.settled = true;
+      clearTimeout(waiter.timer);
       resolve();
-    } else {
-      ytdlpWaitQueue.push(resolve);
-    }
+      return true;
+    };
+    waiter.timer = setTimeout(() => {
+      if (waiter.settled) return;
+      waiter.settled = true;
+      const index = ytdlpWaitQueue.indexOf(waiter);
+      if (index !== -1) ytdlpWaitQueue.splice(index, 1);
+      reject(new Error('Timed out waiting for an audio extraction slot'));
+    }, YTDLP_SLOT_WAIT_MS);
+    ytdlpWaitQueue.push(waiter);
   });
 }
 
 function releaseYtdlpSlot() {
-  const next = ytdlpWaitQueue.shift();
-  if (next) {
-    next(); // slot transferred — count stays the same
-  } else {
-    activeYtdlpCount--;
+  // Hand the slot to the next waiter that is still around; anything that timed
+  // out while queued would otherwise swallow the slot and shrink capacity.
+  while (ytdlpWaitQueue.length > 0) {
+    const waiter = ytdlpWaitQueue.shift();
+    if (waiter.grant()) return; // transferred — active count stays the same
   }
+  activeYtdlpCount--;
 }
 
 function proxiedThumb(url) {
@@ -91,7 +117,7 @@ async function resolveAudioUrl(videoId) {
     await acquireYtdlpSlot();
     try {
       const url = `https://www.youtube.com/watch?v=${videoId}`;
-      const ytdlp = spawn('yt-dlp', [
+      const ytdlp = spawn(YTDLP_BIN, [
         // Prefer the highest-bitrate audio-only stream. Opus (webm) and m4a both play
         // in browsers and the Discord Activity webview; -S sorts candidates so the
         // best audio bitrate (abr) wins instead of defaulting to a compatibility format.
@@ -110,8 +136,21 @@ async function resolveAudioUrl(videoId) {
       ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
       const exitCode = await new Promise((resolve, reject) => {
-        ytdlp.once('error', reject);
-        ytdlp.once('close', resolve);
+        // Without this the promise can hang forever — and because the slot is
+        // only released in the finally below, four stalled runs take the whole
+        // audio pipeline down until the process is restarted.
+        const timer = setTimeout(() => {
+          ytdlp.kill('SIGKILL');
+          reject(new Error(`yt-dlp timed out after ${Math.round(YTDLP_TIMEOUT_MS / 1000)}s`));
+        }, YTDLP_TIMEOUT_MS);
+        ytdlp.once('error', (spawnErr) => {
+          clearTimeout(timer);
+          reject(spawnErr);
+        });
+        ytdlp.once('close', (code) => {
+          clearTimeout(timer);
+          resolve(code);
+        });
       });
 
       audioUrl = audioUrl.trim();
