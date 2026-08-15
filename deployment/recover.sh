@@ -16,12 +16,14 @@
 # may be perfectly healthy). recover.sh restarts both.
 #
 # Usage (on the server):
-#   cd ~/apps/DiscordMusicActivity && bash deployment/recover.sh
+#   cd /srv/apps/discord-music && bash deployment/recover.sh
 #   PULL=0 bash deployment/recover.sh   # skip git pull (keep local changes)
 #
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-$HOME/apps/DiscordMusicActivity}"
+# Home server (192.168.1.33, user huckleberry). See HOMELAB-SERVER.md for the box
+# itself. The previous host, 192.168.1.2 / romokid64, is retired — do not use it.
+APP_DIR="${APP_DIR:-/srv/apps/discord-music}"
 DOMAIN="${DOMAIN:-discordmusic.thejumpvault.com}"
 PORT="${PORT:-3001}"
 TUNNEL_PROC="${TUNNEL_PROC:-discordmusic-tunnel}"
@@ -60,7 +62,10 @@ mkdir -p "$APP_DIR/logs"
 if command -v yt-dlp >/dev/null 2>&1; then
   ok "yt-dlp present: $(yt-dlp --version 2>/dev/null || echo unknown)"
 else
-  warn "yt-dlp NOT found on PATH — YouTube playback will fail. Install: sudo pip install -U yt-dlp"
+  # This exact gap took audio down after the 2026-08 server migration: the app
+  # moved, yt-dlp didn't, and every check except playback stayed green.
+  warn "yt-dlp NOT found on PATH — ALL playback will fail (search and /health stay green)."
+  warn "Install it:  sudo apt-get install -y yt-dlp"
 fi
 
 say "6/7  (Re)starting app + tunnel under PM2"
@@ -105,6 +110,24 @@ elif [ "$LOCAL_CODE" = "200" ]; then
   echo "    cloudflared tunnel info discord-music-activity"
 else
   warn "Public health returned ${PUBLIC_CODE} (app also down — fix the app first; see log above)."
+fi
+
+say "8/8  Playback check (the part /health cannot see)"
+# /health returns 200 with no yt-dlp, no audio, and an empty queue, so it has been
+# a false all-clear here. Resolve a real video through the app and confirm the
+# bytes coming back are actually audio.
+PROBE_ID="$(curl -s --max-time 20 "http://127.0.0.1:${PORT}/youtube/search?q=lofi" \
+  | sed -n 's/.*"id":"\([A-Za-z0-9_-]\{6,20\}\)".*/\1/p' | head -1 || true)"
+if [ -z "$PROBE_ID" ]; then
+  warn "Could not get a video id from search — skipping playback check (YOUTUBE_API_KEY set?)"
+else
+  AUDIO_TYPE="$(curl -s -o /dev/null -w '%{content_type}' --max-time 60 -r 0-65535 \
+    "http://127.0.0.1:${PORT}/youtube/audio/${PROBE_ID}" || true)"
+  case "$AUDIO_TYPE" in
+    audio/*) ok "Playback OK (${PROBE_ID} -> ${AUDIO_TYPE})" ;;
+    *)       warn "Playback BROKEN — /youtube/audio returned '${AUDIO_TYPE:-nothing}', not audio."
+             warn "Most likely yt-dlp is missing, too old, or being refused by YouTube." ;;
+  esac
 fi
 
 say "Done. Current PM2 status:"
