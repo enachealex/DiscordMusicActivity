@@ -126,9 +126,10 @@ async function resolveAudioUrl(videoId) {
         //
         // Live streams publish no audio-only format at all — only muxed HLS variants
         // (91-96) — which is why they used to fail outright with "Requested format is
-        // not available". Fall back to the smallest muxed variant; the video track is
-        // stripped when the stream is served.
-        '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio/91/worst',
+        // not available". The video track is stripped when serving, so the variant is
+        // chosen purely on its audio: 93 carries 44.1kHz AAC-LC (~130kbps), while 91
+        // is 22kHz HE-AAC and 95+ costs far more bandwidth for identical audio.
+        '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio/93/91/worst',
         '-S', 'acodec:opus,abr,asr',
         '--no-playlist',
         '--no-warnings',
