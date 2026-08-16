@@ -1043,18 +1043,33 @@ body {
   margin-left: 6px;
 }
 .vol-icon { font-size: 14px; line-height: 1; }
+/* Speaker + caret as one segmented control: shared dark grey fill, one border
+   around the pair, and a divider line so it's obvious they belong together. */
+.vol-btn-group {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* Keeps each half's hover fill inside the rounded corners. */
+  overflow: hidden;
+}
+
 .vol-icon-btn {
   font-size: 14px;
   line-height: 1;
   background: none;
   border: none;
-  padding: 0;
+  padding: 3px 7px;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
 }
-.vol-icon-btn:hover { opacity: 0.75; }
+.vol-icon-btn:hover { background: var(--accent-hover); }
+.vol-icon-btn.open { background: var(--accent); }
 
 .vol-popup {
   position: absolute;
@@ -1147,17 +1162,17 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
   flex-shrink: 0;
   padding: 0;
-  margin-left: 1px;
+  /* The divider between the two halves. */
   border: none;
-  border-radius: 6px;
-  background: var(--surface2);
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .vol-caret-btn:hover {
   background: var(--accent-hover);
@@ -1166,6 +1181,13 @@ body {
 .vol-caret-btn.open {
   background: var(--accent);
   color: #fff;
+}
+/* Only the chevron flips — rotating the button would swing its divider across
+   to the wrong side of the group. */
+.vol-caret-btn svg {
+  transition: transform 0.15s;
+}
+.vol-caret-btn.open svg {
   transform: rotate(180deg);
 }
 
@@ -1905,10 +1927,9 @@ body {
     font-size: 13px;
   }
 
-  .vol-caret-btn {
-    width: 34px;
-    height: 34px;
-  }
+  /* Both halves grow together so the group keeps a single height. */
+  .vol-caret-btn { width: 34px; }
+  .vol-icon-btn { padding: 6px 10px; }
 
   .playlist-song-item {
     padding: 12px 10px;

@@ -235,8 +235,11 @@ export default function PlayerControls({
         <span className="time-label">{currentTrack && duration > 0 ? `-${formatTime(remaining)}` : '--:--'}</span>
 
         <div className={`vol-control${showVolumePopup || showVolumeMenu ? ' open' : ''}`} ref={volControlRef}>
+          {/* One bordered group with a divider, so the speaker and the caret read as
+              two halves of the same control rather than two loose icons. */}
+          <div className="vol-btn-group">
           <button
-            className="vol-icon-btn"
+            className={`vol-icon-btn${showVolumePopup ? ' open' : ''}`}
             onClick={() => {
               setShowVolumeMenu(false);
               setShowVolumePopup((prev) => !prev);
@@ -271,6 +274,7 @@ export default function PlayerControls({
               />
             </svg>
           </button>
+          </div>
 
           {showVolumeMenu && (
             <div className="vol-menu" role="menu" onClick={(e) => e.stopPropagation()}>
