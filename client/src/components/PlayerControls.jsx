@@ -31,6 +31,13 @@ export default function PlayerControls({
   const remaining = duration > 0 ? Math.max(0, duration - progress) : 0;
   const preVolRef = useRef(volume || 0.7);
   const [showVolumePopup, setShowVolumePopup] = useState(false);
+  // Audio options (Mute / Balance) live in their own dropdown off the caret, so the
+  // slider popup stays a narrow column instead of a cramped stack of controls.
+  const [showVolumeMenu, setShowVolumeMenu] = useState(false);
+  // Windows-style level badge: shows while the slider is being moved (or held) and
+  // fades shortly after, so a quick nudge still tells you where you landed.
+  const [showVolumeBadge, setShowVolumeBadge] = useState(false);
+  const badgeTimerRef = useRef(null);
   const volControlRef = useRef(null);
   const trackRef = useRef(null);
   // Position being dragged to, 0–1. Null when the thumb isn't being held.
@@ -61,19 +68,37 @@ export default function PlayerControls({
   }, [pendingRatio, progress, duration]);
 
   useEffect(() => {
+    function closeAll() {
+      setShowVolumePopup(false);
+      setShowVolumeMenu(false);
+    }
     function handleOutsideClick(e) {
       if (!volControlRef.current) return;
-      if (!volControlRef.current.contains(e.target)) {
-        setShowVolumePopup(false);
-      }
+      if (!volControlRef.current.contains(e.target)) closeAll();
+    }
+    function handleEscape(e) {
+      if (e.key === 'Escape') closeAll();
     }
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('touchstart', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
+
+  const VOLUME_BADGE_LINGER_MS = 1200;
+
+  // Keep the badge up while the slider is in use, and for a moment afterwards.
+  function flashVolumeBadge() {
+    setShowVolumeBadge(true);
+    clearTimeout(badgeTimerRef.current);
+    badgeTimerRef.current = setTimeout(() => setShowVolumeBadge(false), VOLUME_BADGE_LINGER_MS);
+  }
+
+  useEffect(() => () => clearTimeout(badgeTimerRef.current), []);
 
   function toggleMute() {
     if (isMuted) {
@@ -209,43 +234,51 @@ export default function PlayerControls({
 
         <span className="time-label">{currentTrack && duration > 0 ? `-${formatTime(remaining)}` : '--:--'}</span>
 
-        <div className={`vol-control${showVolumePopup ? ' open' : ''}`} ref={volControlRef}>
+        <div className={`vol-control${showVolumePopup || showVolumeMenu ? ' open' : ''}`} ref={volControlRef}>
           <button
             className="vol-icon-btn"
-            onClick={() => setShowVolumePopup((prev) => !prev)}
+            onClick={() => {
+              setShowVolumeMenu(false);
+              setShowVolumePopup((prev) => !prev);
+            }}
             aria-label="Adjust volume"
             title="Adjust volume"
           >
             {isMuted ? '🔇' : vol < 0.5 ? '🔉' : '🔊'}
           </button>
 
-          {showVolumePopup && (
-            <div className="vol-popup" onClick={(e) => e.stopPropagation()}>
-              <div className="vol-readout">{isMuted ? 'Muted' : `${Math.round(vol * 100)}%`}</div>
-              <div className="vol-slider-wrap">
-                <input
-                  type="range"
-                  className="vol-slider-vertical"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={vol}
-                  aria-label="Volume"
-                  onChange={(e) => onVolumeChange?.(parseFloat(e.target.value))}
-                />
-              </div>
+          <button
+            className={`vol-caret-btn${showVolumeMenu ? ' open' : ''}`}
+            onClick={() => {
+              setShowVolumePopup(false);
+              setShowVolumeMenu((prev) => !prev);
+            }}
+            aria-label="Audio options"
+            aria-haspopup="menu"
+            aria-expanded={showVolumeMenu}
+            title="Audio options"
+          >
+            ▾
+          </button>
+
+          {showVolumeMenu && (
+            <div className="vol-menu" role="menu" onClick={(e) => e.stopPropagation()}>
               <button
-                className="vol-mute-mini"
-                onClick={toggleMute}
-                title={isMuted ? 'Unmute' : 'Mute'}
+                className="vol-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  toggleMute();
+                  setShowVolumeMenu(false);
+                }}
               >
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
               {balanceAvailable && (
                 <button
-                  className={`vol-balance-btn${balance ? ' active' : ''}`}
+                  className={`vol-menu-item vol-menu-toggle${balance ? ' active' : ''}`}
+                  role="menuitemcheckbox"
+                  aria-checked={balance}
                   onClick={onBalanceToggle}
-                  aria-pressed={balance}
                   title={
                     balance
                       ? 'Balance on — evens out loud and quiet parts between tracks. Click to turn off.'
@@ -255,6 +288,38 @@ export default function PlayerControls({
                   Balance
                 </button>
               )}
+            </div>
+          )}
+
+          {showVolumePopup && (
+            <div className="vol-popup" onClick={(e) => e.stopPropagation()}>
+              <div className="vol-slider-wrap">
+                {showVolumeBadge && (
+                  <div
+                    className="vol-badge"
+                    // Rides alongside the thumb: 0 sits at the bottom of the travel.
+                    style={{ top: `${(1 - vol) * 100}%` }}
+                  >
+                    {Math.round(vol * 100)}
+                  </div>
+                )}
+                <input
+                  type="range"
+                  className="vol-slider-vertical"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={vol}
+                  aria-label="Volume"
+                  // Press-and-hold shows the level even before it changes.
+                  onPointerDown={flashVolumeBadge}
+                  onKeyDown={flashVolumeBadge}
+                  onChange={(e) => {
+                    flashVolumeBadge();
+                    onVolumeChange?.(parseFloat(e.target.value));
+                  }}
+                />
+              </div>
             </div>
           )}
         </div>

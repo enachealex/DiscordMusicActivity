@@ -1060,42 +1060,48 @@ body {
   position: absolute;
   right: -8px;
   bottom: calc(100% + 8px);
-  /* Wide enough for the percentage readout and the Balance toggle; the old 42px
-     column fit nothing but the slider. */
-  width: 96px;
-  height: 190px;
-  gap: 6px;
+  width: 58px;
+  /* Height follows the content. It used to be fixed, which meant anything that
+     didn't fit was squeezed instead of making the popup taller — that is how the
+     slider ended up overlapping the buttons below it. */
+  gap: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface2);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 6px;
+  justify-content: flex-start;
+  padding: 10px 6px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
   z-index: 12;
 }
 
 .vol-slider-wrap {
-  width: 24px;
-  height: 86px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 104px;
+  /* Never shrink: the rotated input has a fixed visual length, so a squeezed
+     wrapper just lets it spill over its neighbours. */
+  flex: 0 0 auto;
 }
 
 .vol-slider-vertical {
   -webkit-appearance: none;
   appearance: none;
-  width: 86px;
+  /* Taken out of flow: rotation is visual only, so in-flow this element is still
+     104px *wide* and would push siblings around. Absolute + centred means its
+     layout box can't affect anything else. */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 104px;
   height: 4px;
   border-radius: 2px;
   background: var(--border);
   outline: none;
   cursor: pointer;
-  transform: rotate(-90deg);
-  transform-origin: center;
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 .vol-slider-vertical::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1115,53 +1121,94 @@ body {
   cursor: pointer;
 }
 
-.vol-readout {
+/* Level badge, in the spirit of Windows' volume flyout: appears while the slider is
+   being held or moved, sits beside the thumb, and fades a moment later. */
+.vol-badge {
+  position: absolute;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #18191c;
+  border: 1px solid var(--border);
+  color: #f2f3f5;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text);
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 14;
 }
 
-/* Balance: bright blue when on, grey when off, darker blue under the cursor. */
-.vol-balance-btn {
-  width: 100%;
-  border: 1px solid var(--border);
-  background: var(--surface);
+/* Caret beside the speaker: opens the audio-options menu. */
+.vol-caret-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  margin-left: -2px;
   color: var(--text-muted);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10px;
   line-height: 1;
-  padding: 7px 6px;
+  cursor: pointer;
+  transition: color 0.15s, transform 0.15s;
+}
+.vol-caret-btn:hover { color: var(--text); }
+.vol-caret-btn.open {
+  color: var(--text);
+  transform: rotate(180deg);
+}
+
+.vol-menu {
+  position: absolute;
+  right: -8px;
+  bottom: calc(100% + 8px);
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  z-index: 13;
+}
+
+.vol-menu-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 9px 10px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
+.vol-menu-item:hover {
+  background: var(--surface);
+}
 
-.vol-balance-btn.active {
+/* Balance: bright blue when on, grey when off, darker blue under the cursor. */
+.vol-menu-toggle {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+.vol-menu-toggle.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
-
-.vol-balance-btn:hover,
-.vol-balance-btn.active:hover {
+.vol-menu-toggle:hover,
+.vol-menu-toggle.active:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: #fff;
-}
-
-.vol-mute-mini {
-  width: 100%;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 7px 6px;
-  cursor: pointer;
 }
 .vol-mute-mini:hover {
   color: var(--text);
@@ -1209,12 +1256,10 @@ body {
 .player-bar.expanded .vol-icon-btn {
   font-size: 18px;
 }
-.player-bar.expanded .vol-popup {
-  height: 148px;
-  width: 46px;
-}
+/* The popup used to be pinned to 148x46 here, which outranked the base rule and
+   forced everything inside to compete for space. Size comes from the content now;
+   only the slider gets a bigger touch target in the expanded bar. */
 .player-bar.expanded .vol-slider-vertical {
-  width: 96px;
   height: 5px;
 }
 .player-bar.expanded .vol-slider-vertical::-webkit-slider-thumb {
@@ -1844,10 +1889,14 @@ body {
     right: -4px;
   }
 
-  /* Finger-sized targets in the volume popup. */
-  .vol-balance-btn,
-  .vol-mute-mini {
-    min-height: 36px;
+  /* Finger-sized targets in the audio-options menu. */
+  .vol-menu-item {
+    min-height: 40px;
+    font-size: 13px;
+  }
+
+  .vol-caret-btn {
+    padding: 6px 4px;
     font-size: 12px;
   }
 
