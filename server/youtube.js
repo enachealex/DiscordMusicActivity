@@ -18,6 +18,8 @@ const inflightAudioUrlResolves = new Map();
 // The binary to shell out to. Overridable so a host can point at a specific
 // build (e.g. one inside a virtualenv) without editing code.
 const YTDLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
+// Used to strip video from live HLS broadcasts (see streamLiveAudio).
+const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 // A yt-dlp run that hasn't produced a URL by now is not going to. Without this,
 // a stalled process holds its concurrency slot forever and eventually wedges all
 // audio playback — see acquireYtdlpSlot.
@@ -90,7 +92,7 @@ function getCachedAudioUrl(videoId) {
     audioUrlCache.delete(videoId);
     return null;
   }
-  return cached.audioUrl;
+  return cached;
 }
 
 function pruneAudioUrlCache(maxEntries = 500) {
@@ -103,9 +105,9 @@ function pruneAudioUrlCache(maxEntries = 500) {
 }
 
 async function resolveAudioUrl(videoId) {
-  const cachedAudioUrl = getCachedAudioUrl(videoId);
-  if (cachedAudioUrl) {
-    return { audioUrl: cachedAudioUrl, fromCache: true };
+  const cached = getCachedAudioUrl(videoId);
+  if (cached) {
+    return { audioUrl: cached.audioUrl, isLive: !!cached.isLive, fromCache: true };
   }
 
   const existingResolve = inflightAudioUrlResolves.get(videoId);
@@ -121,18 +123,25 @@ async function resolveAudioUrl(videoId) {
         // Prefer the highest-bitrate audio-only stream. Opus (webm) and m4a both play
         // in browsers and the Discord Activity webview; -S sorts candidates so the
         // best audio bitrate (abr) wins instead of defaulting to a compatibility format.
-        '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio',
+        //
+        // Live streams publish no audio-only format at all — only muxed HLS variants
+        // (91-96) — which is why they used to fail outright with "Requested format is
+        // not available". Fall back to the smallest muxed variant; the video track is
+        // stripped when the stream is served.
+        '-f', 'bestaudio[acodec=opus]/bestaudio[ext=m4a]/bestaudio/91/worst',
         '-S', 'acodec:opus,abr,asr',
         '--no-playlist',
         '--no-warnings',
-        '-g',
+        // Two lines out: liveness, then the media URL.
+        '--print', '%(is_live)s',
+        '--print', 'urls',
         url,
       ]);
 
-      let audioUrl = '';
+      let stdout = '';
       let stderr = '';
 
-      ytdlp.stdout.on('data', (chunk) => { audioUrl += chunk.toString(); });
+      ytdlp.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
       ytdlp.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
       const exitCode = await new Promise((resolve, reject) => {
@@ -153,7 +162,11 @@ async function resolveAudioUrl(videoId) {
         });
       });
 
-      audioUrl = audioUrl.trim();
+      // "%(is_live)s" first, then the media URL.
+      const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+      const isLive = lines[0] === 'True';
+      const audioUrl = lines[1] || '';
+
       if (exitCode !== 0 || !audioUrl) {
         const err = new Error('Failed to get audio URL');
         err.details = stderr;
@@ -162,11 +175,12 @@ async function resolveAudioUrl(videoId) {
 
       audioUrlCache.set(videoId, {
         audioUrl,
+        isLive,
         expiresAt: Date.now() + AUDIO_URL_TTL_MS,
       });
       pruneAudioUrlCache();
 
-      return { audioUrl, fromCache: false };
+      return { audioUrl, isLive, fromCache: false };
     } finally {
       releaseYtdlpSlot();
     }
@@ -293,6 +307,49 @@ youtubeRouter.get('/search', async (req, res) => {
   }
 });
 
+// Serve a live broadcast as continuous audio the <audio> element can play.
+// Range requests are meaningless here (there is no end and no seeking), so this
+// answers 200 with an open-ended body rather than 206.
+async function streamLiveAudio(req, res, videoId) {
+  const { audioUrl } = await resolveAudioUrl(videoId);
+
+  res.status(200);
+  res.setHeader('Content-Type', 'audio/aac');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Accept-Ranges', 'none');
+
+  const ffmpeg = spawn(FFMPEG_BIN, [
+    '-loglevel', 'error',
+    '-i', audioUrl,
+    '-vn',              // drop the video track
+    '-c:a', 'copy',     // no re-encode; the HLS audio is already AAC
+    '-f', 'adts',       // a container the browser can start playing mid-stream
+    'pipe:1',
+  ]);
+
+  let stderr = '';
+  ffmpeg.stderr.on('data', (chunk) => { stderr += chunk.toString().slice(0, 2000); });
+  ffmpeg.on('error', (err) => {
+    console.error(`ffmpeg failed for live ${videoId}:`, err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Live audio unavailable' });
+    else res.end();
+  });
+  ffmpeg.on('close', (code) => {
+    if (code && code !== 0 && stderr) {
+      console.error(`ffmpeg exited ${code} for live ${videoId}: ${stderr.trim().slice(0, 300)}`);
+    }
+    res.end();
+  });
+
+  // A live remux runs until the listener leaves; without this the process would
+  // outlive the request and accumulate.
+  const stop = () => { if (!ffmpeg.killed) ffmpeg.kill('SIGKILL'); };
+  req.on('close', stop);
+  res.on('close', stop);
+
+  ffmpeg.stdout.pipe(res);
+}
+
 youtubeRouter.get('/audio/:videoId', async (req, res) => {
   const { videoId } = req.params;
   if (!/^[a-zA-Z0-9_-]{6,20}$/.test(String(videoId || ''))) {
@@ -310,6 +367,12 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
     if (req.headers.range) {
       headers.Range = req.headers.range;
     }
+
+    // A live stream is an HLS playlist of muxed A/V segments, so it can't be proxied
+    // as bytes the way a progressive file can. Remux it to a continuous AAC stream
+    // and drop the video: -c:a copy means no re-encoding, so this costs very little.
+    const { isLive } = await resolveAudioUrl(videoId);
+    if (isLive) return streamLiveAudio(req, res, videoId);
 
     const openUpstream = async () => {
       const { audioUrl } = await resolveAudioUrl(videoId);
