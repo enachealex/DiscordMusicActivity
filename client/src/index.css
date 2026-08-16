@@ -1195,7 +1195,10 @@ body {
   position: absolute;
   right: -8px;
   bottom: calc(100% + 8px);
-  min-width: 132px;
+  /* Hug the longest label instead of a fixed 132px, which left "Mute" swimming in
+     empty space. The minimum keeps it a comfortable target if a label is tiny. */
+  width: max-content;
+  min-width: 84px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1209,7 +1212,8 @@ body {
 
 .vol-menu-item {
   width: 100%;
-  text-align: left;
+  text-align: center;
+  white-space: nowrap;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text);
