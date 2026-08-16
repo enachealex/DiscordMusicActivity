@@ -121,12 +121,25 @@ PROBE_ID="$(curl -s --max-time 20 "http://127.0.0.1:${PORT}/youtube/search?q=lof
 if [ -z "$PROBE_ID" ]; then
   warn "Could not get a video id from search — skipping playback check (YOUTUBE_API_KEY set?)"
 else
-  AUDIO_TYPE="$(curl -s -o /dev/null -w '%{content_type}' --max-time 60 -r 0-65535 \
-    "http://127.0.0.1:${PORT}/youtube/audio/${PROBE_ID}" || true)"
+  # Retry before crying wolf. This runs seconds after a restart, when reconnecting
+  # clients are warming their queues and can occupy every yt-dlp slot — a single
+  # failed probe there means "busy", not "broken", and a check that false-alarms is
+  # a check people stop reading.
+  AUDIO_TYPE=""
+  for attempt in 1 2 3; do
+    AUDIO_TYPE="$(curl -s -o /dev/null -w '%{content_type}' --max-time 60 -r 0-65535 \
+      "http://127.0.0.1:${PORT}/youtube/audio/${PROBE_ID}" || true)"
+    case "$AUDIO_TYPE" in
+      audio/*) break ;;
+      *) [ "$attempt" -lt 3 ] && sleep 5 ;;
+    esac
+  done
+
   case "$AUDIO_TYPE" in
     audio/*) ok "Playback OK (${PROBE_ID} -> ${AUDIO_TYPE})" ;;
-    *)       warn "Playback BROKEN — /youtube/audio returned '${AUDIO_TYPE:-nothing}', not audio."
-             warn "Most likely yt-dlp is missing, too old, or being refused by YouTube." ;;
+    *)       warn "Playback BROKEN after 3 attempts — /youtube/audio returned '${AUDIO_TYPE:-nothing}', not audio."
+             warn "Most likely yt-dlp is missing, too old, or being refused by YouTube."
+             warn "Check:  yt-dlp --version  &&  yt-dlp -f bestaudio -g 'https://www.youtube.com/watch?v=${PROBE_ID}'" ;;
   esac
 fi
 

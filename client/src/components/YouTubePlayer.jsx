@@ -14,6 +14,11 @@ function thumbSrc(url) {
 // Cap on in-place stream recoveries per track, so a video that genuinely cannot be
 // streamed can't loop forever re-fetching itself.
 const MAX_STREAM_RECOVERIES = 3;
+// How long the playhead may sit still, while the element believes it is playing,
+// before we treat the stream as dead. A stalled YouTube URL fires no 'error' and no
+// 'ended' — playback just stops — so nothing else would ever notice.
+const STALL_TIMEOUT_MS = 9000;
+const STALL_POLL_MS = 1500;
 
 const EQ_PRESETS = {
   flat: { bass: 0, treble: 0 },
@@ -317,20 +322,58 @@ export default function YouTubePlayer({
       onDebugEvent?.({ service: 'youtube', playerState: 'error', lastEvent: `yt:audio-error:${code}` });
       // One automatic retry per track — appends ?fresh=1 to force the server to
       // evict any stale yt-dlp URL and re-resolve before streaming.
-      if (retryCountRef.current < 1) {
+      // One retry was not enough: the server log shows an expired URL can be
+      // rejected again immediately after re-resolving, and a second failure used
+      // to leave the track dead with no further attempt.
+      if (retryCountRef.current < MAX_STREAM_RECOVERIES) {
         retryCountRef.current++;
         // Keep the spot: an expired URL can fail partway through a song, and
         // restarting from zero is as jarring as stopping.
         const failedAt = audio.currentTime;
         if (failedAt > 0) resumeAtRef.current = failedAt;
+        const backoffMs = 500 * retryCountRef.current;
         setTimeout(() => {
           const a = audioRef.current;
           if (!a || !track) return;
           a.src = `/api/youtube/audio/${encodeURIComponent(track.id)}?fresh=1`;
           a.load();
-        }, 500);
+        }, backoffMs);
+      } else if (latestRef.current.isDJ || latestRef.current.detached) {
+        // Out of retries. Rather than sit on a dead track, move on — with shuffle
+        // that lands somewhere else, otherwise it's the next song.
+        onDebugEvent?.({ service: 'youtube', lastEvent: 'yt:giving-up-advancing' });
+        latestRef.current.onSkip?.();
       }
     };
+
+    // ── Stall watchdog ──────────────────────────────────────────────────────
+    // The expiring-URL failures in the server log don't always end the stream
+    // cleanly; often it just stops delivering bytes. The element stays "playing"
+    // with a frozen playhead and fires nothing at all, which is the silent
+    // mid-song stop. Watch the clock instead of waiting for an event.
+    let lastObservedTime = -1;
+    let stalledMs = 0;
+    const stallTimer = setInterval(() => {
+      if (audio.paused || audio.ended || audio.readyState === 0) {
+        stalledMs = 0;
+        lastObservedTime = audio.currentTime;
+        return;
+      }
+      const now = audio.currentTime;
+      if (Math.abs(now - lastObservedTime) < 0.05) {
+        stalledMs += STALL_POLL_MS;
+        if (stalledMs >= STALL_TIMEOUT_MS) {
+          stalledMs = 0;
+          if (recoveryCountRef.current < MAX_STREAM_RECOVERIES) {
+            onDebugEvent?.({ service: 'youtube', lastEvent: `yt:stalled@${Math.round(now)}s` });
+            recoverTruncatedStream();
+          }
+        }
+      } else {
+        stalledMs = 0;
+      }
+      lastObservedTime = now;
+    }, STALL_POLL_MS);
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('play', onPlay);
@@ -342,6 +385,7 @@ export default function YouTubePlayer({
     onDebugEvent?.({ service: 'youtube', playerState: 'loading', lastEvent: 'yt:audio-load' });
 
     return () => {
+      clearInterval(stallTimer);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
