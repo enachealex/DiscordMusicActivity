@@ -575,7 +575,11 @@ body {
 }
 .playlist-open-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  /* Back on the left, Add All on the right. With an empty playlist there is no
+     Add All, and Back stays put on the left. */
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
 }
 .btn-add-all-queue {
@@ -1857,6 +1861,13 @@ body {
   .btn-new-playlist-create {
     flex: 1 1 auto;
     min-width: 120px;
+  }
+
+  /* That stretch is for the create-playlist row. In the open-playlist toolbar the
+     Back button should hug its label, not span the row. */
+  .playlist-open-toolbar .btn-back-playlist {
+    flex: 0 0 auto;
+    min-width: 0;
   }
 
   .new-playlist-entry .btn-new-playlist-create,

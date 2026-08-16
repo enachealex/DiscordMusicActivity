@@ -568,22 +568,25 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                 </div>
               )}
             </div>
-            {activePlaylist ? (
+          </div>
+
+          {/* Back sits with the playlist's own actions rather than up in the header —
+              it's where people look for it. Rendered for any open playlist, including
+              an empty one, which has no "Add All" button to share the row with. */}
+          {activePlaylist ? (
+            <div className="playlist-open-toolbar">
               <button type="button" className="btn-back-playlist" onClick={clearSelectedPlaylist}>
                 ← Back
               </button>
-            ) : null}
-          </div>
-
-          {activePlaylist && activePlaylist.tracks.length > 0 ? (
-            <div className="playlist-open-toolbar">
-              <button
-                type="button"
-                className="btn-add-all-queue"
-                onClick={() => addAllToQueue(activePlaylist)}
-              >
-                + Add All to Queue
-              </button>
+              {activePlaylist.tracks.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn-add-all-queue"
+                  onClick={() => addAllToQueue(activePlaylist)}
+                >
+                  + Add All to Queue
+                </button>
+              ) : null}
             </div>
           ) : null}
 
