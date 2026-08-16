@@ -258,7 +258,18 @@ export default function PlayerControls({
             aria-expanded={showVolumeMenu}
             title="Audio options"
           >
-            ▾
+            {/* Drawn rather than the ▾ glyph, which rendered as a few near-invisible
+                pixels at this size. */}
+            <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+              <path
+                d="M1.5 2 L6 6.5 L10.5 2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
 
           {showVolumeMenu && (

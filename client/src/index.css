@@ -1141,21 +1141,31 @@ body {
   z-index: 14;
 }
 
-/* Caret beside the speaker: opens the audio-options menu. */
+/* Caret beside the speaker: opens the audio-options menu. Sized as a real button
+   with its own hit area — as a bare 10px glyph it was almost invisible. */
 .vol-caret-btn {
-  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  margin-left: 1px;
   border: none;
-  padding: 0 2px;
-  margin-left: -2px;
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.15s, transform 0.15s;
-}
-.vol-caret-btn:hover { color: var(--text); }
-.vol-caret-btn.open {
+  border-radius: 6px;
+  background: var(--surface2);
   color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.vol-caret-btn:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+.vol-caret-btn.open {
+  background: var(--accent);
+  color: #fff;
   transform: rotate(180deg);
 }
 
@@ -1896,8 +1906,8 @@ body {
   }
 
   .vol-caret-btn {
-    padding: 6px 4px;
-    font-size: 12px;
+    width: 34px;
+    height: 34px;
   }
 
   .playlist-song-item {
