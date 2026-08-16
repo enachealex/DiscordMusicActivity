@@ -69,6 +69,7 @@ export default function SpotifyPlayer({
       });
       onPlayerReady?.({
         toggle: () => player.togglePlay(),
+        pause: () => player.pause(),
         getPosition: () => 0,
         getDuration: () => 0,
         setVolume: (v) => player.setVolume(v),

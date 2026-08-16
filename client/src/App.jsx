@@ -114,6 +114,10 @@ export default function App() {
   // Whether this session has ever held tracks — distinguishes "empty because we just
   // connected" from "empty because the listener cleared it".
   const sawTracksRef = useRef(false);
+  // Tracks already played in the current shuffle pass. Shuffle used to pick a fresh
+  // random index every time, which repeats songs and can starve others entirely; a
+  // pass plays each song once and only then ends (or reshuffles, if looping).
+  const shufflePassRef = useRef(new Set());
   const resolvedServerUrl = useMemo(() => {
     const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocalHost) return window.location.origin;
@@ -128,6 +132,36 @@ export default function App() {
   }, [ready, user, socketId, resolvedServerUrl]);
 
   const playerActionsRef = useRef({ toggle: () => {}, getPosition: () => 0, getDuration: () => 0, setVolume: () => {}, seek: () => {} });
+
+  // Identity for the shuffle pass. Ids stay stable when the queue is reordered or
+  // trimmed, which indices do not.
+  function trackKey(track) {
+    return track?.id ? `${track.service || 'youtube'}:${track.id}` : null;
+  }
+
+  // Indices still owed a turn this pass, excluding whatever is playing now.
+  function unplayedIndices(queue, currentIndex) {
+    const out = [];
+    for (let i = 0; i < queue.length; i++) {
+      if (i === currentIndex) continue;
+      const key = trackKey(queue[i]);
+      if (key && shufflePassRef.current.has(key)) continue;
+      out.push(i);
+    }
+    return out;
+  }
+
+  function pickRandom(indices) {
+    return indices[Math.floor(Math.random() * indices.length)];
+  }
+
+  // Begin a fresh pass. The track playing right now counts as already played, so it
+  // isn't handed out again later in the same pass.
+  function resetShufflePass(seedTrack) {
+    shufflePassRef.current = new Set();
+    const key = trackKey(seedTrack);
+    if (key) shufflePassRef.current.add(key);
+  }
 
   function cloneRoomState(baseRoom) {
     if (!baseRoom) {
@@ -508,6 +542,14 @@ export default function App() {
       ? activeRoom.queue[activeRoom.currentIndex + 1]
       : null;
 
+  // Mark whatever starts playing as played, however it was reached — a shuffle jump,
+  // a manual pick from the queue, or a plain skip. That keeps a manually chosen song
+  // from coming round again later in the same pass.
+  useEffect(() => {
+    const key = trackKey(currentTrack);
+    if (key) shufflePassRef.current.add(key);
+  }, [currentTrack?.id, currentTrack?.service]);
+
   // Ensure each track starts with a fresh timeline in the UI.
   useEffect(() => {
     if (!currentTrack) {
@@ -603,6 +645,8 @@ export default function App() {
   }
 
   function loadPlaylist(tracks) {
+    // A different set of songs means the old pass no longer describes anything.
+    resetShufflePass(null);
     if (detached) {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
@@ -620,6 +664,15 @@ export default function App() {
     socketRef.current?.emit('queue:load-playlist', tracks);
   }
 
+  // End playback for real: the room flag alone leaves this listener's own player
+  // running, which is audible if they reached the end by pressing skip rather than
+  // by letting the last track finish.
+  function stopPlayback() {
+    playerActionsRef.current.pause?.();
+    setLocalPlaying(false);
+    socketRef.current?.emit('player:sync', { position: 0, isPlaying: false });
+  }
+
   function skip() {
     if (detached) {
       setDetachedRoom((prev) => {
@@ -628,12 +681,23 @@ export default function App() {
           return { ...roomState, currentIndex: -1, isPlaying: false, position: 0, syncedAt: Date.now() };
         }
         if (shuffle && roomState.queue.length > 1) {
-          const candidates = [];
-          for (let i = 0; i < roomState.queue.length; i++) {
-            if (i !== roomState.currentIndex) candidates.push(i);
+          const remaining = unplayedIndices(roomState.queue, roomState.currentIndex);
+          if (remaining.length > 0) {
+            return { ...roomState, currentIndex: pickRandom(remaining), position: 0, syncedAt: Date.now(), isPlaying: true };
           }
-          const nextIndex = candidates[Math.floor(Math.random() * candidates.length)];
-          return { ...roomState, currentIndex: nextIndex, position: 0, syncedAt: Date.now(), isPlaying: true };
+          resetShufflePass(null);
+          if (loop === 'off') {
+            playerActionsRef.current.pause?.();
+            return { ...roomState, isPlaying: false, position: 0, syncedAt: Date.now() };
+          }
+          const all = roomState.queue.map((_, i) => i).filter((i) => i !== roomState.currentIndex);
+          return {
+            ...roomState,
+            currentIndex: all.length > 0 ? pickRandom(all) : 0,
+            position: 0,
+            syncedAt: Date.now(),
+            isPlaying: true,
+          };
         }
         if (roomState.currentIndex < roomState.queue.length - 1) {
           return {
@@ -654,17 +718,25 @@ export default function App() {
     }
     // DJ path
     if (shuffle && room.queue.length > 1) {
-      const candidates = [];
-      for (let i = 0; i < room.queue.length; i++) {
-        if (i !== room.currentIndex) candidates.push(i);
+      const remaining = unplayedIndices(room.queue, room.currentIndex);
+      if (remaining.length > 0) {
+        socketRef.current?.emit('queue:play-now', pickRandom(remaining));
+        return;
       }
-      const randomIdx = candidates[Math.floor(Math.random() * candidates.length)];
-      socketRef.current?.emit('queue:play-now', randomIdx);
+      // Every song has had its turn. Loop off means the shuffle is finished, not
+      // that it should keep picking at random forever.
+      resetShufflePass(null);
+      if (loop === 'off') {
+        stopPlayback();
+        return;
+      }
+      const all = room.queue.map((_, i) => i).filter((i) => i !== room.currentIndex);
+      socketRef.current?.emit('queue:play-now', all.length > 0 ? pickRandom(all) : 0);
       return;
     }
     if (loop === 'off' && room.queue.length > 0 && room.currentIndex >= room.queue.length - 1) {
       // At end of queue and loop is off → stop playback
-      socketRef.current?.emit('player:sync', { position: 0, isPlaying: false });
+      stopPlayback();
       return;
     }
     socketRef.current?.emit('queue:skip');
@@ -817,6 +889,7 @@ export default function App() {
     socketRef.current?.emit('queue:reorder', { from, to });
   }
   function clearQueue() {
+    resetShufflePass(null);
     if (detached) {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
@@ -1128,7 +1201,13 @@ export default function App() {
           expanded={isMobileLayout || !showDebug}
           shuffle={shuffle}
           loop={loop}
-          onShuffleToggle={() => setShuffle((s) => !s)}
+          onShuffleToggle={() =>
+            setShuffle((on) => {
+              // Switching shuffle on starts a fresh pass from whatever is playing.
+              if (!on) resetShufflePass(currentTrack);
+              return !on;
+            })
+          }
           onLoopToggle={() => setLoop((l) => l === 'off' ? 'track' : l === 'track' ? 'queue' : 'off')}
           onPlayToggle={handlePlayToggle}
           onSkip={skip}

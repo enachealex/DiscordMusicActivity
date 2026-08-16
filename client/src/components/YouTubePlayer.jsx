@@ -177,6 +177,9 @@ export default function YouTubePlayer({
           audio.pause();
         }
       },
+      // Used when playback should end outright (e.g. a shuffle pass finishing with
+      // loop off). Telling the room it's paused doesn't silence this element.
+      pause: () => audio?.pause(),
       getPosition: () => audio?.currentTime ?? 0,
       getDuration: () => audio?.duration ?? 0,
       setVolume: (v) => {
