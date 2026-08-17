@@ -1065,6 +1065,10 @@ body {
   background: none;
   border: none;
   padding: 3px 7px;
+  /* Pinned like its caret sibling: the speaker swaps between three glyphs as the
+     slider crosses 50% and on mute, and an unpinned box would jitter mid-drag. */
+  width: 32px;
+  flex-shrink: 0;
   cursor: pointer;
   border-radius: 0;
   display: flex;
@@ -1258,27 +1262,67 @@ body {
   border-color: var(--accent);
 }
 
+/* Transport buttons are fixed squares, never content-sized. '▶' and '⏸' are
+   different glyph widths, so a button that hugs its label grows and shrinks on
+   every play/pause and shoves the time label and volume control sideways. */
 .ctrl-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Sized from a variable set on .controls-row, never on the button itself:
+     .player-bar.expanded outranks any plain .player-bar override, so a value
+     set here could not be turned down again at phone widths. */
+  width: var(--ctrl-size, 34px);
+  height: var(--ctrl-size, 34px);
+  flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--text);
   font-size: 16px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 0;
   border-radius: 6px;
   line-height: 1;
   transition: background 0.15s;
 }
-.ctrl-btn.ctrl-btn--sm { font-size: 11px; padding: 4px 6px; letter-spacing: 0; font-weight: 600; }
+/* '↩15' is a word, not a glyph — it gets room to breathe, but its label is
+   constant so a wider box here can't shift anything either. */
+.ctrl-btn.ctrl-btn--text {
+  width: auto;
+  min-width: var(--ctrl-size, 34px);
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.ctrl-btn-badge {
+  position: absolute;
+  top: 15%;
+  left: 62%;
+  font-size: 0.46em;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
 .ctrl-btn:hover:not(:disabled) { background: var(--surface2); }
 .ctrl-btn:disabled { opacity: 0.28; cursor: not-allowed; }
 .ctrl-btn.active { color: var(--accent); }
 .ctrl-btn.active:hover:not(:disabled) { background: rgba(88,101,242,.15); }
-.time-label { font-size: 11px; color: var(--text-muted); min-width: 34px; text-align: center; }
+/* Tabular figures, or the countdown re-measures on every 500ms tick and drags
+   the volume control with it — proportional digits are the default in SF Pro. */
+.time-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 34px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .sync-pill { text-align: center; font-size: 11px; color: var(--text-muted); padding-bottom: 2px; }
 
 /* Expanded Player Bar (when debug is hidden) */
 .player-bar.expanded .controls-row {
+  --ctrl-size: 48px;
   padding: 16px 20px 10px;
   gap: 12px;
 }
@@ -1288,12 +1332,11 @@ body {
 }
 .player-bar.expanded .ctrl-btn {
   font-size: 24px;
-  padding: 8px 12px;
   border-radius: 8px;
 }
-.player-bar.expanded .ctrl-btn.ctrl-btn--sm {
+.player-bar.expanded .ctrl-btn.ctrl-btn--text {
   font-size: 14px;
-  padding: 6px 10px;
+  padding: 0 10px;
 }
 .player-bar.expanded .vol-icon, 
 .player-bar.expanded .vol-icon-btn {
@@ -1937,6 +1980,9 @@ body {
     /* Right padding is deliberately tiny: the volume control should sit a couple
        of pixels off the screen edge, not tucked well inside it. */
     padding: 10px 2px 4px 8px;
+    /* Five 40px buttons is 200px of the ~211px this row can spare at 360px once
+       the time label and volume control have taken their share. */
+    --ctrl-size: 40px;
   }
 
   .player-bar .playback-btns {
@@ -1945,13 +1991,16 @@ body {
     min-width: 0;
   }
 
-  .player-bar .ctrl-btn {
-    padding-left: 6px;
-    padding-right: 6px;
+  /* The label has to stay inside its 40px box, so it gets no side padding here. */
+  .player-bar .ctrl-btn.ctrl-btn--text,
+  .player-bar.expanded .ctrl-btn.ctrl-btn--text {
+    padding: 0 2px;
+    font-size: 12px;
   }
 
+  /* The 44px floor from .expanded stays: it fits '-10:00', so crossing ten
+     minutes can't widen the label and push the volume control. */
   .player-bar .time-label {
-    min-width: auto;
     margin-left: 2px;
   }
 

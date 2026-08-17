@@ -196,14 +196,14 @@ export default function PlayerControls({
       <div className="controls-row">
         <div className="playback-btns">
           <button
-            className={`ctrl-btn ctrl-btn--sm${shuffle ? ' active' : ''}`}
+            className={`ctrl-btn${shuffle ? ' active' : ''}`}
             onClick={onShuffleToggle}
             title={shuffle ? 'Shuffle on — click to disable' : 'Shuffle off — click to enable'}
           >
             ⇌
           </button>
           <button
-            className="ctrl-btn ctrl-btn--sm"
+            className="ctrl-btn ctrl-btn--text"
             onClick={() => onSeek?.(Math.max(0, progress - 15))}
             disabled={!canControl || !currentTrack}
             title="Rewind 15 seconds"
@@ -227,11 +227,14 @@ export default function PlayerControls({
             ⏭
           </button>
           <button
-            className={`ctrl-btn ctrl-btn--sm${loop !== 'off' ? ' active' : ''}`}
+            className={`ctrl-btn${loop !== 'off' ? ' active' : ''}`}
             onClick={onLoopToggle}
             title={loop === 'off' ? 'Loop off — click for loop track' : loop === 'track' ? 'Loop track — click for loop queue' : 'Loop queue — click to disable'}
           >
-            {loop === 'track' ? '↻¹' : '↻'}
+            ↻
+            {/* The "1" is a corner badge rather than part of the label, so
+                switching to loop-track can't nudge the arrow off centre. */}
+            {loop === 'track' && <span className="ctrl-btn-badge">1</span>}
           </button>
         </div>
 
