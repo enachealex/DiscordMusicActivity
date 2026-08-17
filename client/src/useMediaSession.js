@@ -148,7 +148,7 @@ export function useMediaSession({
     session.setMetadata({
       title: track.title || 'Unknown track',
       artist: track.artist || '',
-      album: 'JumpVault Music',
+      album: 'Vault Music',
       artwork: artworkSrc ? [{ src: artworkSrc, sizes: '320x180', type: 'image/jpeg' }] : [],
     });
   }, [supported, session, track?.id, track?.service, track?.title, track?.artist, track?.thumbnail]);

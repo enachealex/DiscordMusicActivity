@@ -1,6 +1,6 @@
 {
   "appId": "com.thejumpvault.discordmusic",
-  "appName": "JumpVault Music",
+  "appName": "Vault Music",
   "webDir": "www",
   "android": {
     "allowMixedContent": false,
