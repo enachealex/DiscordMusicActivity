@@ -46,6 +46,9 @@ export default function YouTubePlayer({
   const retryCountRef = useRef(0);
   // Position to resume from after re-fetching a stream that died mid-track.
   const resumeAtRef = useRef(null);
+  // Set when a follower deliberately paused (lock screen / media keys), so the
+  // room-driven sync below leaves them alone until they press play again.
+  const followerPausedRef = useRef(false);
   const recoveryCountRef = useRef(0);
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
@@ -180,6 +183,16 @@ export default function YouTubePlayer({
       // Used when playback should end outright (e.g. a shuffle pass finishing with
       // loop off). Telling the room it's paused doesn't silence this element.
       pause: () => audio?.pause(),
+      // Discrete, not a toggle: the OS sends a specific action, and inverting
+      // whatever the element happens to be doing desyncs the notification.
+      play: () => {
+        if (!audio) return;
+        resumeAudioProcessingContext();
+        audio.play().catch(() => setNeedsInteraction(true));
+      },
+      // A follower's playback is driven by room state. Without this gate, pausing
+      // from the lock screen is undone by the next sync tick a few seconds later.
+      setFollowerPaused: (paused) => { followerPausedRef.current = !!paused; },
       getPosition: () => audio?.currentTime ?? 0,
       getDuration: () => audio?.duration ?? 0,
       setVolume: (v) => {
@@ -242,6 +255,8 @@ export default function YouTubePlayer({
     retryCountRef.current = 0;
     resumeAtRef.current = null;
     recoveryCountRef.current = 0;
+    // A new track is a fresh start; don't carry a previous manual pause into it.
+    followerPausedRef.current = false;
     ensureAudioProcessing(audio);
     registerActions(audio);
     audio.src = `/api/youtube/audio/${encodeURIComponent(track.id)}`;
@@ -466,7 +481,9 @@ export default function YouTubePlayer({
     if (Number.isFinite(audio.duration) && Math.abs((audio.currentTime || 0) - expected) > 2.5) {
       audio.currentTime = Math.max(0, Math.min(audio.duration, expected));
     }
-    if (room.isPlaying && audio.paused) {
+    // Respect a deliberate local pause; otherwise the room would drag this
+    // listener back into playback seconds after they paused it.
+    if (room.isPlaying && audio.paused && !followerPausedRef.current) {
       resumeAudioProcessingContext();
       audio.play().catch(() => setNeedsInteraction(true));
     }

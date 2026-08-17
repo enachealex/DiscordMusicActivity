@@ -13,6 +13,7 @@ import EqSelector from './components/EqSelector.jsx';
 import DiscordParty from './components/DiscordParty.jsx';
 import InstallAppBanner from './components/InstallAppBanner.jsx';
 import QueueMemory from './components/QueueMemory.jsx';
+import { useMediaSession } from './useMediaSession.js';
 import {
   isRememberQueueEnabled,
   setRememberQueue,
@@ -593,6 +594,21 @@ export default function App() {
         });
     });
   }, [activeRoom?.queue, activeRoom?.currentIndex, activeService, isDJ, detached]);
+
+  // Lock-screen / notification / media-key controls. Must sit above the early
+  // return below — hooks can't be called conditionally. Guarded internally for
+  // Android WebView, which has no Media Session API at all.
+  useMediaSession({
+    track: currentTrack,
+    service: activeService,
+    localPlaying,
+    isDJ,
+    detached,
+    playerActionsRef,
+    onNext: () => skip(),
+    onSeek: (seconds) => handleSeek(seconds),
+    onStop: () => stopPlayback(),
+  });
 
   if (!ready || !room) {
     return (

@@ -95,6 +95,37 @@ function getCachedAudioUrl(videoId) {
   return cached;
 }
 
+// Ids that could not be resolved, remembered briefly.
+//
+// Without this, a track that can never resolve (deleted, region-blocked, private)
+// re-spawns yt-dlp every time the room changes, because warmYoutubeQueueAhead runs
+// on connect and on every queue mutation with no memory of failure. Each attempt
+// holds one of only MAX_CONCURRENT_YTDLP slots for up to YTDLP_TIMEOUT_MS, so a
+// single bad track can exhaust the limiter and make *good* tracks fail with
+// "Timed out waiting for an audio extraction slot". One dud shouldn't starve the
+// rest of the queue.
+const unplayableCache = new Map();
+const UNPLAYABLE_TTL_MS = 10 * 60 * 1000;
+
+function markUnplayable(videoId) {
+  unplayableCache.set(videoId, Date.now() + UNPLAYABLE_TTL_MS);
+  if (unplayableCache.size > 500) {
+    for (const [id, expiresAt] of unplayableCache.entries()) {
+      if (expiresAt <= Date.now()) unplayableCache.delete(id);
+    }
+  }
+}
+
+function isKnownUnplayable(videoId) {
+  const expiresAt = unplayableCache.get(videoId);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    unplayableCache.delete(videoId);
+    return false;
+  }
+  return true;
+}
+
 function pruneAudioUrlCache(maxEntries = 500) {
   if (audioUrlCache.size <= maxEntries) return;
   for (const [key, value] of audioUrlCache.entries()) {
@@ -108,6 +139,13 @@ async function resolveAudioUrl(videoId) {
   const cached = getCachedAudioUrl(videoId);
   if (cached) {
     return { audioUrl: cached.audioUrl, isLive: !!cached.isLive, fromCache: true };
+  }
+
+  // Checked before taking a slot, so a known-bad id costs nothing.
+  if (isKnownUnplayable(videoId)) {
+    const err = new Error('Failed to get audio URL');
+    err.details = `${videoId} failed recently; not retrying yet`;
+    throw err;
   }
 
   const existingResolve = inflightAudioUrlResolves.get(videoId);
@@ -169,6 +207,7 @@ async function resolveAudioUrl(videoId) {
       const audioUrl = lines[1] || '';
 
       if (exitCode !== 0 || !audioUrl) {
+        markUnplayable(videoId);
         const err = new Error('Failed to get audio URL');
         err.details = stderr;
         throw err;
@@ -202,6 +241,8 @@ export function warmYoutubeQueueAhead(queue, currentIndex, count = 4) {
     .map((track) => track.id);
 
   for (const videoId of ids) {
+    // Don't burn a yt-dlp slot re-warming something known to be broken.
+    if (isKnownUnplayable(videoId)) continue;
     resolveAudioUrl(videoId).catch(() => {
       // Best-effort warmup only; regular playback path still handles failures.
     });
@@ -360,6 +401,9 @@ youtubeRouter.get('/audio/:videoId', async (req, res) => {
   // ?fresh=1 forces a new yt-dlp run (used by the client after a playback error).
   if (req.query.fresh === '1') {
     audioUrlCache.delete(videoId);
+    // An explicit retry from the player should get a real attempt, not the
+    // remembered failure.
+    unplayableCache.delete(videoId);
   }
 
   try {
