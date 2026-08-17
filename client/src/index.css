@@ -313,7 +313,15 @@ body {
   /* Hide the leftover spacer on desktop — the panel now fills the column. */
   .app-right .app-right-fill { display: none; }
 }
+/* Two equal halves that split the row whatever the labels say, so neither
+   button's text can decide how much space the other gets. */
+.mobile-launch-row {
+  display: flex;
+  gap: 8px;
+}
 .mobile-search-launch {
+  flex: 1 1 0;
+  min-width: 0;
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--border);

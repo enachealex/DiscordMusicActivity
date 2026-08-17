@@ -218,6 +218,11 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
 
   function openNewPlaylistInput(track = null) {
     setActiveTab('playlist');
+    // The queue's "+ New Playlist" fires this while the phone panel is still
+    // collapsed, so without this the form mounts nowhere and the tap does
+    // nothing — then strands its state on the next visit. Inert on desktop:
+    // both readers of the flag are gated on isMobileLayout.
+    setShowMobileSearch(true);
     setPendingNewPlaylistTrack(track);
     setShowNewPlaylistInput(true);
     setNewPlaylistName('');
@@ -446,16 +451,31 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   return (
     <div className={`search-panel${isMobileLayout && showMobileSearch ? ' mobile-search-open' : ''}`}>
       {isMobileLayout && !showMobileSearch ? (
-        <button
-          type="button"
-          className="mobile-search-launch"
-          onClick={() => {
-            setActiveTab('songs');
-            setShowMobileSearch(true);
-          }}
-        >
-          Search Songs
-        </button>
+        // Playlists used to be two taps deep and behind a button labelled for
+        // search, so it sits alongside as its own entry point on phones.
+        <div className="mobile-launch-row">
+          <button
+            type="button"
+            className="mobile-search-launch"
+            onClick={() => {
+              setActiveTab('songs');
+              setShowMobileSearch(true);
+            }}
+          >
+            Search Songs
+          </button>
+          <button
+            type="button"
+            className="mobile-search-launch"
+            onClick={() => {
+              setActiveTab('playlist');
+              setSelectedPlaylistId(null);
+              setShowMobileSearch(true);
+            }}
+          >
+            Playlists
+          </button>
+        </div>
       ) : (
         <>
       <form onSubmit={handleSearch} className="search-input-wrapper">
