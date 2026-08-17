@@ -19,16 +19,34 @@ import { useEffect, useRef } from 'react';
 // One hard rule on the native side: telling it "playing" while the page is hidden
 // starts a foreground service from the background and crashes the app. Anything sent
 // while hidden is therefore queued and flushed when the page is visible again.
+// The plugin's types promise Promise<void> from every method, but setActionHandler
+// actually returns a callback-id string at runtime. Calling .catch() on that throws
+// a TypeError inside a React effect, which unmounts the whole app — a blank screen.
+// Never assume the return value is thenable.
+function settle(result) {
+  if (result && typeof result.catch === 'function') result.catch(() => {});
+}
+
 function getNativeSession() {
   const plugin = typeof window !== 'undefined' && window.Capacitor?.Plugins?.MediaSession;
   if (!plugin) return null;
   let queuedState = null;
 
+  // Every call is wrapped: a throw here happens inside a React effect, so an
+  // unexpected plugin response must never escape.
+  const call = (fn) => {
+    try {
+      settle(fn());
+    } catch {
+      // Plugin unavailable or unhappy — the session is best-effort.
+    }
+  };
+
   const flush = () => {
     if (queuedState && document.visibilityState === 'visible') {
       const state = queuedState;
       queuedState = null;
-      plugin.setPlaybackState({ playbackState: state }).catch(() => {});
+      call(() => plugin.setPlaybackState({ playbackState: state }));
     }
   };
   if (typeof document !== 'undefined') {
@@ -37,18 +55,17 @@ function getNativeSession() {
 
   return {
     kind: 'native',
-    setMetadata: (meta) => plugin.setMetadata(meta).catch(() => {}),
+    setMetadata: (meta) => call(() => plugin.setMetadata(meta ?? { title: '', artist: '', album: '', artwork: [] })),
     setPlaybackState: (state) => {
       if (state === 'playing' && document.visibilityState !== 'visible') {
         queuedState = state;
         return;
       }
       queuedState = null;
-      plugin.setPlaybackState({ playbackState: state }).catch(() => {});
+      call(() => plugin.setPlaybackState({ playbackState: state }));
     },
-    setActionHandler: (action, handler) =>
-      plugin.setActionHandler({ action }, handler).catch(() => {}),
-    setPositionState: (position) => plugin.setPositionState(position).catch(() => {}),
+    setActionHandler: (action, handler) => call(() => plugin.setActionHandler({ action }, handler)),
+    setPositionState: (position) => call(() => plugin.setPositionState(position)),
   };
 }
 
