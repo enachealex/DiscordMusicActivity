@@ -1077,7 +1077,10 @@ body {
 
 .vol-popup {
   position: absolute;
-  right: -8px;
+  /* Aligned to the control's own right edge. A negative offset here pushed the
+     panel past the viewport on a phone, which is what produced the horizontal
+     scrollbar and the 1px shift when opening it. */
+  right: 0;
   bottom: calc(100% + 8px);
   width: 58px;
   /* Height follows the content. It used to be fixed, which meant anything that
@@ -1197,7 +1200,7 @@ body {
 
 .vol-menu {
   position: absolute;
-  right: -8px;
+  right: 0;
   bottom: calc(100% + 8px);
   /* Hug the longest label instead of a fixed 132px, which left "Mute" swimming in
      empty space. The minimum keeps it a comfortable target if a label is tiny. */
@@ -1654,6 +1657,14 @@ body {
     position: static;
   }
 
+  /* Once the header wraps, these land at the left of the second row. Push them to
+     the right so they sit under the other controls rather than under the title.
+     The margin belongs on the flex item (.lt-wrap), not the button inside it. */
+  .app-header .lt-wrap,
+  .app-header .dp-wrap {
+    margin-left: auto;
+  }
+
   .app-header .lt-popover,
   .app-header .dp-popover {
     top: calc(100% + 6px);
@@ -1911,15 +1922,32 @@ body {
   .progress-thumb { width: 16px; height: 16px; margin-left: -8px; }
   .progress-tooltip { font-size: 12px; padding: 4px 9px; }
 
-  .player-bar .controls-row {
+  /* Everything in this row has to fit inside a phone. It didn't: the content
+     needed ~364px against ~314px of room, so it spilled past both edges and the
+     volume control ended up hard against (in fact 2px beyond) the screen edge,
+     with a horizontal scrollbar to match. Tighter padding and gaps, and the
+     playback cluster is allowed to give ground first. */
+  /* .expanded sets 16px 20px 10px with a 12px gap and outranks a plain
+     .controls-row rule, so the override has to match that specificity. */
+  .player-bar .controls-row,
+  .player-bar.expanded .controls-row {
     flex-wrap: nowrap;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 12px 4px;
+    justify-content: space-between;
+    gap: 4px;
+    /* Right padding is deliberately tiny: the volume control should sit a couple
+       of pixels off the screen edge, not tucked well inside it. */
+    padding: 10px 2px 4px 8px;
   }
 
   .player-bar .playback-btns {
-    gap: 4px;
+    gap: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .player-bar .ctrl-btn {
+    padding-left: 6px;
+    padding-right: 6px;
   }
 
   .player-bar .time-label {
@@ -1932,8 +1960,10 @@ body {
     margin-left: 2px;
   }
 
-  .player-bar .vol-popup {
-    right: -4px;
+  /* No negative offset on a phone: it is what pushed the panel off-screen. */
+  .player-bar .vol-popup,
+  .player-bar .vol-menu {
+    right: 0;
   }
 
   /* Finger-sized targets in the audio-options menu. */

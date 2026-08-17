@@ -1053,7 +1053,7 @@ export default function App() {
             <text x="50" y="57" textAnchor="middle" fontSize="20" fill="white" fontFamily="sans-serif">♪</text>
             <circle cx="50" cy="50" r="3.5" fill="#18191c"/>
           </svg>
-          <h1 className="app-title-text">Music</h1>
+          <h1 className="app-title-text">Vault Music</h1>
           <span className="app-header-spacer" />
           <button
             className={`mobile-service-toggle ${activeService === 'spotify' ? 'spotify' : 'youtube'}`}
