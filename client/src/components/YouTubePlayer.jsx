@@ -19,6 +19,10 @@ const MAX_STREAM_RECOVERIES = 3;
 // 'ended' — playback just stops — so nothing else would ever notice.
 const STALL_TIMEOUT_MS = 9000;
 const STALL_POLL_MS = 1500;
+// Ticks of uninterrupted playback that count as "recovered", returning the retry
+// budget. 20 × 1500ms = 30s — long enough that a track limping along in a
+// recovery loop can't keep refilling it.
+const HEALTHY_TICKS_TO_RESET = 20;
 
 const EQ_PRESETS = {
   flat: { bass: 0, treble: 0 },
@@ -371,6 +375,7 @@ export default function YouTubePlayer({
     // mid-song stop. Watch the clock instead of waiting for an event.
     let lastObservedTime = -1;
     let stalledMs = 0;
+    let healthyTicks = 0;
     const stallTimer = setInterval(() => {
       if (audio.paused || audio.ended || audio.readyState === 0) {
         stalledMs = 0;
@@ -382,13 +387,33 @@ export default function YouTubePlayer({
         stalledMs += STALL_POLL_MS;
         if (stalledMs >= STALL_TIMEOUT_MS) {
           stalledMs = 0;
+          healthyTicks = 0;
           if (recoveryCountRef.current < MAX_STREAM_RECOVERIES) {
             onDebugEvent?.({ service: 'youtube', lastEvent: `yt:stalled@${Math.round(now)}s` });
             recoverTruncatedStream();
+          } else if (latestRef.current.isDJ || latestRef.current.detached) {
+            // Out of recoveries. This branch used to be missing entirely, and it
+            // is the silent mid-song stop: the element never pauses, never ends
+            // and never errors, so nothing else can act. The room went on
+            // believing it was playing and dragged every follower to a position
+            // the DJ would never reach. Escalate exactly like onError does.
+            onDebugEvent?.({ service: 'youtube', lastEvent: 'yt:stall-giving-up-advancing' });
+            latestRef.current.onSkip?.();
           }
         }
       } else {
         stalledMs = 0;
+        // The budget is per-episode, not per-track. Without this a long mix or a
+        // looped track spends its three recoveries on unrelated early blips and
+        // then runs unprotected for the rest of its length — and under
+        // loop === 'track' the counters never reset at all, because track.id
+        // never changes. Sustained clean playback earns the budget back.
+        healthyTicks += 1;
+        if (healthyTicks >= HEALTHY_TICKS_TO_RESET) {
+          healthyTicks = 0;
+          recoveryCountRef.current = 0;
+          retryCountRef.current = 0;
+        }
       }
       lastObservedTime = now;
     }, STALL_POLL_MS);
