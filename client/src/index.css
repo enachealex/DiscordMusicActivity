@@ -102,6 +102,57 @@ body {
    "Add to Discord" button sitting next to the title. */
 .app-header-spacer { flex: 1; }
 
+/* ── Update / restart notice ────────── */
+.update-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(88, 101, 242, 0.14);
+  border-bottom: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.update-notice--done {
+  background: rgba(46, 160, 67, 0.14);
+  border-bottom-color: var(--success);
+}
+.update-notice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: update-pulse 1.1s ease-in-out infinite;
+}
+.update-notice--done .update-notice-dot {
+  background: var(--success);
+  animation: none;
+}
+@keyframes update-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.update-notice-text { min-width: 0; }
+
+/* Every candidate label shares one grid cell, so the box is as wide as the
+   widest of them and swapping state cannot resize the control. Sizing this in
+   px instead would be tuned to the dev machine's font and wrong on the phone. */
+.stable-label {
+  display: inline-grid;
+  justify-items: center;
+  align-items: center;
+  white-space: nowrap;
+}
+.stable-label > * {
+  grid-area: 1 / 1;
+}
+.stable-label-ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .mobile-service-toggle {
   display: none;
   align-items: center;
@@ -1669,6 +1720,11 @@ body {
     height: 100vh;
     height: 100dvh;
     overflow-y: auto;
+    /* Reserve the scrollbar gutter permanently. Switching to Spotify makes the
+       page taller, and a scrollbar appearing mid-session pulled the whole UI
+       4px left. No-op on the phone, where scrollbars are overlays and never
+       take layout width. */
+    scrollbar-gutter: stable;
   }
 
   .app {

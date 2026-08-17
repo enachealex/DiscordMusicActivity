@@ -715,3 +715,39 @@ const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// ────────────────────────────────────────────────
+// Graceful shutdown — tell listeners before the lights go out
+// ────────────────────────────────────────────────
+// A deploy restarts this process, and every ephemeral room (solo sessions and
+// Listen Together parties) lives only in this process's memory. Going down
+// silently is what made an update look like "the app cleared my queue": the
+// client reconnected into a brand new empty room with no idea why.
+//
+// So announce it first. The client saves what it has, shows a notice, and
+// restores its queue on the way back up. The delay before exit exists purely so
+// the emit reaches the wire — pm2 sends SIGINT and waits ~1.6s before SIGKILL,
+// so keep this comfortably inside that window.
+const SHUTDOWN_NOTICE_MS = 500;
+let shuttingDown = false;
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received — notifying ${io.engine.clientsCount} client(s) before restart`);
+
+  // Listeners in a party lose the shared room entirely; a solo listener keeps a
+  // local copy. The client decides what to say — it knows which one it is.
+  io.emit('server:updating', { reason: 'update', reconnectHintMs: 4000 });
+
+  setTimeout(() => {
+    io.close();
+    httpServer.close(() => process.exit(0));
+    // Don't let a lingering keep-alive hold the process past the kill timeout.
+    setTimeout(() => process.exit(0), 1500).unref();
+  }, SHUTDOWN_NOTICE_MS);
+}
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => shutdown(signal));
+}

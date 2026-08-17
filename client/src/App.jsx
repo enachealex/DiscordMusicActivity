@@ -13,6 +13,8 @@ import EqSelector from './components/EqSelector.jsx';
 import DiscordParty from './components/DiscordParty.jsx';
 import InstallAppBanner from './components/InstallAppBanner.jsx';
 import QueueMemory from './components/QueueMemory.jsx';
+import StableLabel from './components/StableLabel.jsx';
+import UpdateNotice from './components/UpdateNotice.jsx';
 import { useMediaSession } from './useMediaSession.js';
 import BackgroundPlaybackPrompt from './components/BackgroundPlaybackPrompt.jsx';
 import { isNativeApp, readBackgroundPreference, writeBackgroundPreference } from './backgroundPlayback.js';
@@ -116,6 +118,8 @@ export default function App() {
   const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
   // Web solo sessions can keep their queue in this browser between visits.
   const [rememberQueue, setRememberQueueState] = useState(() => isWebMode && isRememberQueueEnabled());
+  // null | 'updating' | 'reconnected' — drives the restart banner.
+  const [updatePhase, setUpdatePhase] = useState(null);
   const socketRef = useRef(null);
   const preloadedYoutubeIdsRef = useRef(new Set());
   // Whether this session has ever held tracks — distinguishes "empty because we just
@@ -460,9 +464,33 @@ export default function App() {
     });
     // A per-tab session id means a returning visitor lands in a brand new, empty
     // room. If this browser remembered a queue, hand it back on the first state we
-    // receive. Guarded to one attempt so later updates can't re-restore over live
-    // changes; the server also refuses unless the room is still empty.
+    // receive. Guarded to one attempt per connection so later updates can't
+    // re-restore over live changes; the server also refuses unless the room is
+    // still empty.
     let restoreAttempted = false;
+
+    // The server announces a restart before a deploy takes it down. Save
+    // immediately — the room is about to be gone — and tell the listener what is
+    // happening rather than letting the music stop for no visible reason.
+    socket.on('server:updating', () => {
+      setUpdatePhase('updating');
+      setRoom((prev) => {
+        if (prev?.queue?.length) {
+          saveRememberedQueue({
+            queue: prev.queue,
+            currentIndex: prev.currentIndex ?? 0,
+            currentService: prev.currentService,
+            position: playerActionsRef.current.getPosition?.() || 0,
+          });
+        }
+        return prev;
+      });
+    });
+    socket.on('disconnect', () => {
+      // Only relevant if we were told an update was coming; an ordinary blip
+      // should not put a banner on screen.
+      setUpdatePhase((prev) => (prev === 'updating' ? 'updating' : prev));
+    });
     socket.on('room:state', (state) => {
       setRoom(state);
       if (restoreAttempted) return;
@@ -491,7 +519,16 @@ export default function App() {
     });
 
     socketRef.current = socket;
-    socket.on('connect', () => setSocketId(socket.id));
+    socket.on('connect', () => {
+      setSocketId(socket.id);
+      // Socket.IO reuses this socket across reconnects, so a server restart hands
+      // back a fresh, empty room on the SAME socket without re-running this
+      // effect. Leaving the one-shot guard armed from the first connect is what
+      // let a deploy take the listener's queue: the restore never ran again.
+      restoreAttempted = false;
+      // Confirm the recovery, then get out of the way.
+      setUpdatePhase((prev) => (prev === 'updating' ? 'reconnected' : prev));
+    });
     if (socket.connected) setSocketId(socket.id);
 
     return () => {
@@ -514,11 +551,12 @@ export default function App() {
       return;
     }
     const persist = () => {
-      if ((room.queue || []).length === 0) {
-        // Emptied on purpose during this session; forget it.
-        clearRememberedQueue();
-        return;
-      }
+      // An empty queue never erases the backup. It almost always means the server
+      // handed us a fresh room — a redeploy, a restart, a dropped connection — and
+      // treating that as "the listener emptied it on purpose" is what made an
+      // update destroy the saved queue as well as the live one, leaving nothing to
+      // restore even after a reload. Forgetting is an explicit act: clearQueue().
+      if ((room.queue || []).length === 0) return;
       saveRememberedQueue({
         queue: room.queue,
         currentIndex: room.currentIndex ?? 0,
@@ -530,6 +568,13 @@ export default function App() {
     window.addEventListener('pagehide', persist);
     return () => window.removeEventListener('pagehide', persist);
   }, [isSoloWebSession, rememberQueue, room?.queue, room?.currentIndex, room?.currentService]);
+
+  // The "back online" confirmation is worth a moment, not a permanent fixture.
+  useEffect(() => {
+    if (updatePhase !== 'reconnected') return;
+    const timer = setTimeout(() => setUpdatePhase(null), 6000);
+    return () => clearTimeout(timer);
+  }, [updatePhase]);
 
   function handleRememberQueueChange(next) {
     setRememberQueueState(next);
@@ -939,6 +984,8 @@ export default function App() {
   }
   function clearQueue() {
     resetShufflePass(null);
+    // The only place the remembered queue is forgotten: the listener asked for it.
+    clearRememberedQueue();
     if (detached) {
       setDetachedRoom((prev) => {
         const roomState = prev ?? cloneRoomState(room);
@@ -1061,7 +1108,10 @@ export default function App() {
             disabled={!isDJ && !detached}
             title={detached ? 'Switch your local service (detached mode)' : (!isDJ ? 'Only the DJ can switch services' : 'Toggle service')}
           >
-            {activeService === 'youtube' ? '▶ YouTube' : '♪ Spotify'}
+            <StableLabel
+              value={activeService === 'youtube' ? '▶ YouTube' : '♪ Spotify'}
+              alternatives={['▶ YouTube', '♪ Spotify']}
+            />
           </button>
           <DJBadge isDJ={isDJ} />
           {!isDJ && (
@@ -1115,12 +1165,17 @@ export default function App() {
                     }
                   }}
                 >
-                  {detached ? '← Rejoin' : 'Detach'}
+                  <StableLabel
+                    value={detached ? '← Rejoin' : 'Detach'}
+                    alternatives={['← Rejoin', 'Detach']}
+                  />
                 </button>
               )}
             </>
           )}
         </header>
+
+        <UpdateNotice phase={updatePhase} inParty={!!roomCode || !!discordPartyCode} />
 
         {/* Install prompt: mobile browsers only. The Discord activity and the
             packaged app both suppress it (see InstallAppBanner). */}
