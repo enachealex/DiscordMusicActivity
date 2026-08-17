@@ -1,0 +1,83 @@
+.bgp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.bgp-card {
+  width: 100%;
+  max-width: 340px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.bgp-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #f2f3f5;
+}
+
+.bgp-body {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.bgp-note {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.bgp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bgp-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.bgp-btn-secondary {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.bgp-btn-secondary:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.bgp-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.bgp-btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.bgp-footnote {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #72767d;
+  text-align: center;
+}

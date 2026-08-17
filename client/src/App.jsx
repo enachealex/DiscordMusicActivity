@@ -14,6 +14,8 @@ import DiscordParty from './components/DiscordParty.jsx';
 import InstallAppBanner from './components/InstallAppBanner.jsx';
 import QueueMemory from './components/QueueMemory.jsx';
 import { useMediaSession } from './useMediaSession.js';
+import BackgroundPlaybackPrompt from './components/BackgroundPlaybackPrompt.jsx';
+import { isNativeApp, readBackgroundPreference, writeBackgroundPreference } from './backgroundPlayback.js';
 import {
   isRememberQueueEnabled,
   setRememberQueue,
@@ -94,6 +96,10 @@ export default function App() {
   // Loudness smoothing (the compressor + makeup gain in the audio graph). On by
   // default, which is how it has always behaved; the control just makes it visible.
   const [balance, setBalance] = useState(() => localStorage.getItem('balance-mode') !== 'off');
+  // Packaged-app only: hold an OS media session (notification + lock screen controls,
+  // foreground service) while playing. Null until the listener has been asked.
+  const [backgroundPlayback, setBackgroundPlayback] = useState(() => readBackgroundPreference());
+  const [showBackgroundPrompt, setShowBackgroundPrompt] = useState(false);
   const [debugInfo, setDebugInfo] = useState({
     service: '-',
     playerState: '-',
@@ -595,10 +601,37 @@ export default function App() {
     });
   }, [activeRoom?.queue, activeRoom?.currentIndex, activeService, isDJ, detached]);
 
+  // Ask about background playback the first time the listener actually leaves the
+  // app with music going. Prompting as they leave would be pointless — they aren't
+  // looking — so the question is raised when they come back.
+  useEffect(() => {
+    if (!isNativeApp() || backgroundPlayback !== null) return;
+    let leftWhilePlaying = false;
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') {
+        if (localPlaying) leftWhilePlaying = true;
+        return;
+      }
+      if (leftWhilePlaying) {
+        leftWhilePlaying = false;
+        setShowBackgroundPrompt(true);
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [backgroundPlayback, localPlaying]);
+
+  function answerBackgroundPrompt(enabled) {
+    writeBackgroundPreference(enabled);
+    setBackgroundPlayback(enabled ? 'on' : 'off');
+    setShowBackgroundPrompt(false);
+  }
+
   // Lock-screen / notification / media-key controls. Must sit above the early
   // return below — hooks can't be called conditionally. Guarded internally for
   // Android WebView, which has no Media Session API at all.
   useMediaSession({
+    nativeEnabled: backgroundPlayback === 'on',
     track: currentTrack,
     service: activeService,
     localPlaying,
@@ -1214,6 +1247,9 @@ export default function App() {
           // Balance lives in our own audio graph; Spotify plays through its SDK,
           // which we don't route, so the control would do nothing there.
           balanceAvailable={activeService === 'youtube'}
+          backgroundAvailable={isNativeApp()}
+          backgroundEnabled={backgroundPlayback === 'on'}
+          onBackgroundToggle={() => answerBackgroundPrompt(backgroundPlayback !== 'on')}
           expanded={isMobileLayout || !showDebug}
           shuffle={shuffle}
           loop={loop}
@@ -1317,6 +1353,13 @@ export default function App() {
             <button className="btn-toast-cancel" onClick={cancelClaimRequest} title="Cancel DJ request">×</button>
           </div>
         </div>
+      )}
+
+      {showBackgroundPrompt && (
+        <BackgroundPlaybackPrompt
+          onAllow={() => answerBackgroundPrompt(true)}
+          onDecline={() => answerBackgroundPrompt(false)}
+        />
       )}
 
       {/* Prefetch the next YouTube track's audio while the current song plays.

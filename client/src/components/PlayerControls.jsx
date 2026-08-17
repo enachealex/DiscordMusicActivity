@@ -25,6 +25,9 @@ export default function PlayerControls({
   balance = true,
   onBalanceToggle,
   balanceAvailable = true,
+  backgroundEnabled = false,
+  onBackgroundToggle,
+  backgroundAvailable = false,
 }) {
   const canControl = isDJ || detached;
   const seekable = canControl && !!currentTrack && duration > 0;
@@ -301,6 +304,21 @@ export default function PlayerControls({
                   }
                 >
                   Balance
+                </button>
+              )}
+              {backgroundAvailable && (
+                <button
+                  className={`vol-menu-item vol-menu-toggle${backgroundEnabled ? ' active' : ''}`}
+                  role="menuitemcheckbox"
+                  aria-checked={backgroundEnabled}
+                  onClick={onBackgroundToggle}
+                  title={
+                    backgroundEnabled
+                      ? 'Background on — playback continues outside the app, with controls in the notification shade. Click to turn off.'
+                      : 'Background off — no media notification. Click to turn on.'
+                  }
+                >
+                  Background
                 </button>
               )}
             </div>
