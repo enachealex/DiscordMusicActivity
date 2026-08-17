@@ -455,6 +455,13 @@ body {
 .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-clear-search { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; background: var(--text-muted); color: var(--bg); font-size: 14px; line-height: 1; cursor: pointer; opacity: 0.7; display: flex; align-items: center; justify-content: center; }
 .btn-clear-search:hover { opacity: 1; background: var(--danger); }
+/* Invisible padding around the disc so a small dot is still an easy target,
+   especially on a phone where the visible circle is only 14px. */
+.btn-clear-search::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
 
 .search-results { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; }
 .search-result-item {
@@ -632,14 +639,30 @@ body {
   background: var(--surface2);
   color: var(--text);
 }
+/* Back left, the playlist's name centred, Add All right.
+   Equal side columns are what put the name on the row's TRUE centre — the two
+   buttons are different widths (66px vs 137px), so any layout that merely fills
+   the space between them lands the name off-centre by half that difference.
+   The empty-playlist case has no Add All button and still centres correctly,
+   because the third column exists whether or not anything sits in it. */
 .playlist-open-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
-  /* Back on the left, Add All on the right. With an empty playlist there is no
-     Add All, and Back stays put on the left. */
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+}
+.playlist-open-toolbar > .btn-back-playlist { justify-self: start; }
+.playlist-open-toolbar > .btn-add-all-queue { justify-self: end; }
+.playlist-open-title {
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .btn-add-all-queue {
   padding: 8px 14px;
@@ -1922,10 +1945,14 @@ body {
     justify-content: center;
   }
 
+  /* Small disc, full-size target. The circle only needs to read as a clear
+     button; the ::after below keeps a 28px tap area over a 14px dot, so
+     shrinking it costs nothing in usability. */
   .search-input-field .btn-clear-search {
-    width: 28px;
-    height: 28px;
-    right: 6px;
+    width: 14px;
+    height: 14px;
+    font-size: 11px;
+    right: 8px;
   }
 
   .btn-tab {
@@ -1934,17 +1961,22 @@ body {
     font-size: 13px;
   }
 
-  .btn-search {
-    padding: 10px 16px;
-    min-height: 44px;
+  /* Back and Search sit either side of the text field and were 44px against its
+     31px, which is what made them loom over the row. All three share a height
+     now. 40px rather than the field's old 31px so the buttons stay comfortably
+     tappable — the field grows to meet them instead of them shrinking to it. */
+  .search-input-row .search-input,
+  .search-input-row .btn-search,
+  .search-input-row .btn-mobile-search-back {
+    min-height: 40px;
     font-size: 13px;
   }
-
-  /* Same touch target as the Search button it shares the row with. */
-  .btn-mobile-search-back {
-    padding: 10px 12px;
-    min-height: 44px;
-    font-size: 13px;
+  .search-input-row .btn-search,
+  .search-input-row .btn-mobile-search-back {
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .btn-new-playlist,
@@ -1987,6 +2019,27 @@ body {
     flex: 0 0 auto;
     min-width: 0;
   }
+
+  /* A phone cannot afford true centring here. Equal side columns would have to be
+     as wide as "+ Add All to Queue" (137px), leaving the name about 50px — eight
+     characters — at 360px. Fall back to filling the gap between the buttons: the
+     name is then ~110px and reads, at the cost of sitting ~30px left of the row's
+     exact centre. Readability wins on the smaller screen. */
+  .playlist-open-toolbar {
+    display: flex;
+    gap: 8px;
+  }
+  .playlist-open-toolbar > button { flex: 0 0 auto; }
+  .playlist-open-title { flex: 1 1 auto; }
+
+  /* An empty playlist has no Add All button, so there is no wide element forcing
+     the compromise above — the grid fits, and the name sits on the row's true
+     centre instead of drifting into the space where the button would have been. */
+  .playlist-open-toolbar--no-action {
+    display: grid;
+    grid-template-columns: 1fr minmax(0, auto) 1fr;
+  }
+  .playlist-open-toolbar--no-action .playlist-open-title { flex: none; }
 
   .new-playlist-entry .btn-new-playlist-create,
   .new-playlist-entry .btn-back-playlist {

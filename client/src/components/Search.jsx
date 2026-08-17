@@ -479,6 +479,10 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
       ) : (
         <>
       <form onSubmit={handleSearch} className="search-input-wrapper">
+        {/* The row survives on every tab even though the field does not, because
+            on a phone it carries the Back button — dropping the whole row would
+            strand someone on Playlist or History with no way out. */}
+        {(isMobileLayout || activeTab === 'songs') && (
         <div className="search-input-row">
           {isMobileLayout && (
             <button
@@ -490,6 +494,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               ‹ Back
             </button>
           )}
+          {activeTab === 'songs' && (
           <div className="search-input-field">
             <input
               className="search-input"
@@ -503,10 +508,14 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               </button>
             )}
           </div>
-          <button type="submit" className="btn-search" disabled={loading}>
-            {loading ? '…' : 'Search'}
-          </button>
+          )}
+          {activeTab === 'songs' && (
+            <button type="submit" className="btn-search" disabled={loading}>
+              {loading ? '…' : 'Search'}
+            </button>
+          )}
         </div>
+        )}
 
         <div className="search-action-bar">
           <button
@@ -518,7 +527,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               closeContextMenu();
             }}
           >
-            Songs
+            Search
           </button>
           <button
             type="button"
@@ -594,10 +603,19 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               it's where people look for it. Rendered for any open playlist, including
               an empty one, which has no "Add All" button to share the row with. */}
           {activePlaylist ? (
-            <div className="playlist-open-toolbar">
+            <div
+              className={`playlist-open-toolbar${
+                activePlaylist.tracks.length > 0 ? '' : ' playlist-open-toolbar--no-action'
+              }`}
+            >
               <button type="button" className="btn-back-playlist" onClick={clearSelectedPlaylist}>
                 ← Back
               </button>
+              {/* Names longer than the row are truncated, so keep the full one in
+                  the tooltip. */}
+              <span className="playlist-open-title" title={activePlaylist.name}>
+                {activePlaylist.name}
+              </span>
               {activePlaylist.tracks.length > 0 ? (
                 <button
                   type="button"
