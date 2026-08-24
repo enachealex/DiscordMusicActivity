@@ -479,6 +479,45 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
       ) : (
         <>
       <form onSubmit={handleSearch} className="search-input-wrapper">
+        {/* Tabs come first so they hold the same spot on every tab. They used to
+            sit under the search row, which meant switching away from Search
+            removed the field and jumped the whole strip upwards. */}
+        <div className="search-action-bar">
+          <button
+            type="button"
+            className={`btn-tab${activeTab === 'songs' ? ' active' : ''}`}
+            onClick={() => {
+              setActiveTab('songs');
+              setSelectedPlaylistId(null);
+              closeContextMenu();
+            }}
+          >
+            Search
+          </button>
+          <button
+            type="button"
+            className={`btn-tab${activeTab === 'playlist' ? ' active' : ''}`}
+            onClick={() => {
+              setActiveTab('playlist');
+              setSelectedPlaylistId(null);
+              closeContextMenu();
+            }}
+          >
+            Playlist
+          </button>
+          <button
+            type="button"
+            className={`btn-tab${activeTab === 'history' ? ' active' : ''}`}
+            onClick={() => {
+              setActiveTab('history');
+              setSelectedPlaylistId(null);
+              closeContextMenu();
+            }}
+          >
+            History
+          </button>
+        </div>
+
         {/* The row survives on every tab even though the field does not, because
             on a phone it carries the Back button — dropping the whole row would
             strand someone on Playlist or History with no way out. */}
@@ -516,42 +555,6 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
           )}
         </div>
         )}
-
-        <div className="search-action-bar">
-          <button
-            type="button"
-            className={`btn-tab${activeTab === 'songs' ? ' active' : ''}`}
-            onClick={() => {
-              setActiveTab('songs');
-              setSelectedPlaylistId(null);
-              closeContextMenu();
-            }}
-          >
-            Search
-          </button>
-          <button
-            type="button"
-            className={`btn-tab${activeTab === 'playlist' ? ' active' : ''}`}
-            onClick={() => {
-              setActiveTab('playlist');
-              setSelectedPlaylistId(null);
-              closeContextMenu();
-            }}
-          >
-            Playlist
-          </button>
-          <button
-            type="button"
-            className={`btn-tab${activeTab === 'history' ? ' active' : ''}`}
-            onClick={() => {
-              setActiveTab('history');
-              setSelectedPlaylistId(null);
-              closeContextMenu();
-            }}
-          >
-            History
-          </button>
-        </div>
       </form>
 
       {error && (

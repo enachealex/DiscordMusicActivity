@@ -390,7 +390,9 @@ body {
 .search-input-wrapper { display: flex; gap: 6px; flex-direction: column; margin-bottom: 8px; }
 .search-input-row { display: flex; gap: 8px; align-items: center; }
 .search-input-field { position: relative; flex: 1; min-width: 0; }
-.search-action-bar { display: flex; gap: 8px; margin-top: 8px; }
+/* Sits first in the wrapper now, so the column gap handles its spacing — a
+   margin-top here would push the whole panel down. */
+.search-action-bar { display: flex; gap: 8px; }
 /* Leaves the mobile full-screen search. Sits at the start of the input row so it
    reads as a back affordance in the top-left corner. */
 .btn-mobile-search-back {
