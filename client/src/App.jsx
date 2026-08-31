@@ -1361,6 +1361,7 @@ export default function App() {
           spotifyRestoring={spotifyRestoring}
           queue={activeRoom.queue}
           deletedHistory={activeRoom.deletedHistory || []}
+          historyRetentionDays={activeRoom.historyRetentionDays || 30}
           isDJ={isDJ}
           canManageHistory={isDJ || detached}
           onAdd={addTrack}

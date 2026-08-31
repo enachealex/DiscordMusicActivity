@@ -10,7 +10,7 @@ function thumbSrc(url) {
   return url;
 }
 
-export default function Search({ service, spotifyToken, spotifyRestoring, queue, deletedHistory, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyLogout, isDJ, canManageHistory, onClearHistory }) {
+export default function Search({ service, spotifyToken, spotifyRestoring, queue, deletedHistory, historyRetentionDays = 30, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyLogout, isDJ, canManageHistory, onClearHistory }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,12 +27,16 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [pendingNewPlaylistTrack, setPendingNewPlaylistTrack] = useState(null);
   const queuedIds = useMemo(() => new Set((queue || []).map((track) => track.id)), [queue]);
+  // The server already prunes to its retention window; this second filter only
+  // hides anything that slipped through. It has to use the SAME window the server
+  // does — hardcoding 7 here would quietly cap the list at a week no matter what
+  // the server kept.
   const historyItems = useMemo(() => {
-    const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const cutoff = Date.now() - (historyRetentionDays * 24 * 60 * 60 * 1000);
     return (deletedHistory || [])
       .filter((entry) => Number(entry?.deletedAt || 0) >= cutoff)
       .sort((a, b) => Number(b.deletedAt || 0) - Number(a.deletedAt || 0));
-  }, [deletedHistory]);
+  }, [deletedHistory, historyRetentionDays]);
   const activePlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId);
   const playlistCreateHint = pendingNewPlaylistTrack
     ? 'Create a playlist for the selected track.'
@@ -780,7 +784,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               );
             })
           ) : (
-            <div className="queue-empty">No deleted songs in the last 7 days.</div>
+            <div className="queue-empty">No deleted songs in the last {historyRetentionDays} days.</div>
           )}
         </div>
         </>

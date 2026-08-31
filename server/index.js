@@ -14,14 +14,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env') });
 
 const playlistsDir = join(__dirname, 'playlists');
-const parsedHistoryRetentionDays = Number.parseInt(process.env.HISTORY_RETENTION_DAYS || '7', 10);
+// Deleted-song history is kept for a month. The entry cap moved with it: pruning
+// takes the most recent N *within* the window, so leaving the cap at 500 while
+// stretching the window to 30 days would just mean a busy room silently lost the
+// older weeks it was promised.
+const parsedHistoryRetentionDays = Number.parseInt(process.env.HISTORY_RETENTION_DAYS || '30', 10);
 const HISTORY_RETENTION_DAYS = Number.isFinite(parsedHistoryRetentionDays) && parsedHistoryRetentionDays > 0
   ? parsedHistoryRetentionDays
-  : 7;
-const parsedHistoryMaxEntries = Number.parseInt(process.env.HISTORY_MAX_ENTRIES || '500', 10);
+  : 30;
+const parsedHistoryMaxEntries = Number.parseInt(process.env.HISTORY_MAX_ENTRIES || '2000', 10);
 const HISTORY_MAX_ENTRIES = Number.isFinite(parsedHistoryMaxEntries) && parsedHistoryMaxEntries > 0
   ? parsedHistoryMaxEntries
-  : 500;
+  : 2000;
 const HISTORY_RETENTION_MS = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // Ensure playlists directory exists
@@ -233,6 +237,10 @@ async function getRoom(channelId) {
       position: 0,
       syncedAt: Date.now(),
       deletedHistory,
+      // Ships with every room:state broadcast so the History tab can state the
+      // real window instead of hardcoding a number that drifts when the
+      // HISTORY_RETENTION_DAYS override is set.
+      historyRetentionDays: HISTORY_RETENTION_DAYS,
     });
   }
   return rooms.get(channelId);
