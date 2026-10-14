@@ -20,5 +20,12 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "sharp": "^0.35.3"
+  },
+  "overrides": {
+    "@capacitor/assets": {
+      "@capacitor/cli": "$@capacitor/cli",
+      "sharp": "$sharp"
+    },
+    "uuid": "^11.1.1"
   }
 }
