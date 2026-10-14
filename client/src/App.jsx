@@ -423,7 +423,10 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code }),
               });
-              if (!tokenRes.ok) throw new Error('Token exchange failed');
+              if (!tokenRes.ok) {
+                const { error } = await tokenRes.json().catch(() => ({}));
+                throw new Error(`Token exchange failed (${tokenRes.status})${error ? `: ${error}` : ''}`);
+              }
               const { access_token } = await tokenRes.json();
               const auth = await discordSdk.commands.authenticate({ access_token });
               userData = auth.user;

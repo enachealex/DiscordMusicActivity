@@ -106,17 +106,37 @@ app.get('/media/thumb', async (req, res) => {
   }
 });
 
+// Only the token exchange below needs these, and only a launch inside Discord reaches it —
+// the web and Listen Together flows never do — so a missing value used to go unnoticed for
+// weeks. Name it at startup instead.
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const missingDiscordEnv = [
+  !DISCORD_CLIENT_ID && 'DISCORD_CLIENT_ID',
+  !DISCORD_CLIENT_SECRET && 'DISCORD_CLIENT_SECRET',
+].filter(Boolean);
+if (missingDiscordEnv.length) {
+  console.warn(`Discord Activity login is disabled: ${missingDiscordEnv.join(' and ')} not set in .env`);
+}
+
 // Discord OAuth token exchange — required by the Embedded App SDK
 app.post('/discord/token', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Code required' });
 
+  // Without this, URLSearchParams sends the literal string "undefined" and Discord answers
+  // with an unhelpful 'Value "undefined" is not snowflake'.
+  if (missingDiscordEnv.length) {
+    console.error(`Discord token exchange refused: ${missingDiscordEnv.join(' and ')} not set in .env`);
+    return res.status(503).json({ error: 'Discord login is not configured on the server' });
+  }
+
   try {
     const response = await axios.post(
       'https://discord.com/api/oauth2/token',
       new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
-        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
       }),
@@ -124,7 +144,7 @@ app.post('/discord/token', async (req, res) => {
     );
     res.json({ access_token: response.data.access_token });
   } catch (err) {
-    console.error('Discord token exchange failed:', err.response?.data);
+    console.error('Discord token exchange failed:', err.response?.status, err.response?.data ?? err.message);
     res.status(500).json({ error: 'Discord auth failed' });
   }
 });
