@@ -47,12 +47,42 @@ Discord client / browser
 ```yaml
 tunnel: 83dd9b7b-5cdc-4864-8d41-cd0fe42a20bb
 credentials-file: /home/huckleberry/.cloudflared/83dd9b7b-5cdc-4864-8d41-cd0fe42a20bb.json
+protocol: http2
 
 ingress:
   - hostname: discordmusic.thejumpvault.com
     service: http://127.0.0.1:3001
   - service: http_status:404
 ```
+
+### Tunnel resilience (why `protocol: http2`)
+
+Through late August 2026 the tunnel's edge connections kept dropping — the logs filled with
+`no recent network activity`, and every drop severed live Socket.IO sessions, so listeners
+"lost connection once in a while" even though the app on `:3001` was healthy the whole time.
+
+**The root cause was on the host, not the tunnel:** the NIC held two addresses at once (a static
+`.33` plus a DHCP lease, because a leftover `dhcp4: true` in netplan merged in), which made
+source-address selection ambiguous and starved cloudflared's QUIC connections. That was fixed on
+2026-09-02 with `dhcp4: false` — see `HOMELAB-SERVER.md` §1. If the drops come back, check
+`ip -4 addr show enp42s0` for a second address **before** touching cloudflared.
+
+Two tunnel settings were added the same day as defence in depth. Keep them:
+
+1. **`protocol: http2`** in each tunnel's config (above) — runs the tunnel over TCP/443, which
+   is more forgiving of a flaky path than QUIC over UDP/7844.
+2. **Larger UDP buffers**, in `/etc/sysctl.d/99-cloudflared.conf` (Cloudflare's recommended
+   minimum for QUIC, and harmless for HTTP/2):
+
+   ```
+   net.core.rmem_max=7500000
+   net.core.wmem_max=7500000
+   ```
+   Apply with `sudo sysctl --system`.
+
+After changing a tunnel config, restart just that one process: `pm2 restart discordmusic-tunnel`.
+Confirm the new connections register on the right transport:
+`pm2 logs discordmusic-tunnel --lines 20 --nostream | grep 'protocol='` (want `protocol=http2`).
 
 ---
 
