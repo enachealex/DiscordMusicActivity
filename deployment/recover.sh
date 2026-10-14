@@ -21,8 +21,8 @@
 #
 set -euo pipefail
 
-# Home server (192.168.1.33, user huckleberry). See HOMELAB-SERVER.md for the box
-# itself. The previous host, 192.168.1.2 / romokid64, is retired — do not use it.
+# Home server: huckleberry@100.112.51.64 (Tailscale — the LAN address moves, so do not
+# hardcode it). See HOMELAB-SERVER.md for the box itself. The previous host, 192.168.1.2 / romokid64, is retired — do not use it.
 APP_DIR="${APP_DIR:-/srv/apps/discord-music}"
 DOMAIN="${DOMAIN:-discordmusic.thejumpvault.com}"
 PORT="${PORT:-3001}"

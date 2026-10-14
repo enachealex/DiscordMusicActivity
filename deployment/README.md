@@ -22,9 +22,12 @@ Discord client / browser
                                                      └── PM2: discord-music (Node/Express + Socket.IO)
 ```
 
-- **Host:** the home server, `huckleberry@192.168.1.33` (key `~/.ssh/id_ed25519`). App lives at
-  `/srv/apps/discord-music`. **`HOMELAB-SERVER.md` is canonical for the box itself** — storage
-  layout, port map, and gotchas — read it before changing anything there.
+- **Host:** the home server, `huckleberry@100.112.51.64` (key `~/.ssh/id_ed25519`). That is its
+  **Tailscale** address, the only stable one. The LAN address has already moved twice
+  (`192.168.1.33` → `192.168.0.163` when the router was replaced on 2026-09-28), so look it up
+  with `hostname -I` rather than hardcoding it. App lives at `/srv/apps/discord-music`.
+  **`HOMELAB-SERVER.md` is canonical for the box itself** — storage layout, port map, and
+  gotchas — read it before changing anything there.
 - **App process:** PM2 process `discord-music`, port `3001` (see `ecosystem.config.cjs`).
 - **Edge/ingress:** a **dedicated** Cloudflare named tunnel `discord-music-activity`, run by
   PM2 process `discordmusic-tunnel` with config `~/.cloudflared/discordmusic.yml`. DNS
@@ -109,7 +112,7 @@ A record or change proxy settings. Fix the tunnel/app.
 ## Fast recovery
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 huckleberry@192.168.1.33
+ssh -i ~/.ssh/id_ed25519 huckleberry@100.112.51.64    # Tailscale — not the LAN address
 cd /srv/apps/discord-music
 bash deployment/recover.sh       # pulls, installs, builds, restarts app+tunnel, health-checks
 ```
