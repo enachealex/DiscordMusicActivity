@@ -18,6 +18,13 @@ const inflightAudioUrlResolves = new Map();
 // The binary to shell out to. Overridable so a host can point at a specific
 // build (e.g. one inside a virtualenv) without editing code.
 const YTDLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
+// Which YouTube client yt-dlp impersonates. Pinned rather than left to yt-dlp's
+// default, because that default moves between releases and YouTube treats the
+// clients very differently: 2026.08.19 defaulted to VISIONOS (every URL played),
+// 2026.10.21 switched to TVHTML5 and most URLs it returned were rejected with 403.
+// The nightly upgrade correctly refused that release and rolled back, which left
+// yt-dlp frozen. When YouTube moves again, change this env var — no deploy needed.
+const YTDLP_PLAYER_CLIENT = process.env.YTDLP_PLAYER_CLIENT || 'visionos';
 // Used to strip video from live HLS broadcasts (see streamLiveAudio).
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 // A yt-dlp run that hasn't produced a URL by now is not going to. Without this,
@@ -171,6 +178,7 @@ async function resolveAudioUrl(videoId) {
         '-S', 'acodec:opus,abr,asr',
         '--no-playlist',
         '--no-warnings',
+        '--extractor-args', `youtube:player_client=${YTDLP_PLAYER_CLIENT}`,
         // Two lines out: liveness, then the media URL.
         '--print', '%(is_live)s',
         '--print', 'urls',
