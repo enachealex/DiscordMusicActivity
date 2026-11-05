@@ -18,7 +18,7 @@
     "@capgo/capacitor-media-session": "^8.0.29"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
+    "@capacitor/assets": "^4.0.0",
     "sharp": "^0.35.3"
   },
   "overrides": {
