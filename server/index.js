@@ -11,7 +11,7 @@ import { spotifyRouter, handleSpotifyCallback } from './spotify.js';
 import { youtubeRouter, warmYoutubeQueueAhead } from './youtube.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '../.env') });
+dotenv.config({ path: join(__dirname, '../.env'), quiet: true });
 
 const playlistsDir = join(__dirname, 'playlists');
 // Deleted-song history is kept for a month. The entry cap moved with it: pruning
@@ -121,7 +121,8 @@ if (missingDiscordEnv.length) {
 
 // Discord OAuth token exchange — required by the Embedded App SDK
 app.post('/discord/token', async (req, res) => {
-  const { code } = req.body;
+  // Express 5 leaves req.body undefined when no body was parsed (4 gave {}).
+  const { code } = req.body ?? {};
   if (!code) return res.status(400).json({ error: 'Code required' });
 
   // Without this, URLSearchParams sends the literal string "undefined" and Discord answers
@@ -735,7 +736,9 @@ app.get('/download/android', async (_req, res) => {
 // Serve React production build (client/dist) for Discord Activity
 const clientDist = join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
-app.get('*', (_req, res) => {
+// Express 5 path syntax: a bare '*' is rejected at startup. '/{*splat}' is the
+// catch-all that also matches '/' itself ('/*splat' would require a segment).
+app.get('/{*splat}', (_req, res) => {
   res.sendFile(join(clientDist, 'index.html'));
 });
 

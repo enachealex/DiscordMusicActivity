@@ -6,7 +6,7 @@ import { dirname, join } from 'path';
 import { io } from './index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '../.env') });
+dotenv.config({ path: join(__dirname, '../.env'), quiet: true });
 
 export const spotifyRouter = express.Router();
 
@@ -98,7 +98,8 @@ spotifyRouter.get('/login', (req, res) => {
 
 // Refresh an expired Spotify access token
 spotifyRouter.post('/refresh', async (req, res) => {
-  const { refresh_token } = req.body;
+  // Express 5 leaves req.body undefined when no body was parsed (4 gave {}).
+  const { refresh_token } = req.body ?? {};
   if (!refresh_token) return res.status(400).json({ error: 'refresh_token required' });
 
   try {
