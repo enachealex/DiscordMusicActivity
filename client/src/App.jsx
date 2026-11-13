@@ -18,6 +18,7 @@ import UpdateNotice from './components/UpdateNotice.jsx';
 import { useMediaSession } from './useMediaSession.js';
 import BackgroundPlaybackPrompt from './components/BackgroundPlaybackPrompt.jsx';
 import { isNativeApp, readBackgroundPreference, writeBackgroundPreference } from './backgroundPlayback.js';
+import { isLanPartyCandidate, connectLanParty } from './lanParty.js';
 import {
   isRememberQueueEnabled,
   setRememberQueue,
@@ -41,13 +42,21 @@ function gainFromPosition(position) {
 }
 
 let discordSdk = null;
-try {
-  discordSdk = new DiscordSDK(DISCORD_CLIENT_ID);
-} catch (e) {
-  console.warn('Discord SDK unavailable:', e.message);
+// A page LAN Party framed (?lanparty=1) is not inside Discord, whatever else is true,
+// so the Discord SDK is never constructed there: it would start its own postMessage
+// handshake with a parent that is not Discord. If the LAN Party handshake then fails,
+// the page is simply the website in a frame — see lanParty.js.
+if (!isLanPartyCandidate) {
+  try {
+    discordSdk = new DiscordSDK(DISCORD_CLIENT_ID);
+  } catch (e) {
+    console.warn('Discord SDK unavailable:', e.message);
+  }
 }
 
-// True when running on the plain website rather than embedded in Discord.
+// True when running on the plain website rather than embedded in Discord. Also true
+// inside LAN Party, which is the website in a frame; what differs there is tracked
+// separately (the `lanParty` state in App) because it is only known after a handshake.
 const isWebMode = !discordSdk;
 
 // Parse a "Listen Together" room code from the URL: /room/CODE or ?room=CODE.
@@ -75,6 +84,10 @@ export default function App() {
   // Discord-only: a Listen Together party code this user has joined in-place (null = none).
   // Any Discord user (solo, voice channel, or group) can join/leave a party by code.
   const [discordPartyCode, setDiscordPartyCode] = useState(null);
+  // True once a LAN Party host has answered the bridge handshake: the listener is
+  // signed in under their LAN Party name and, in a voice channel, the room is that
+  // channel's. Stays false on the website, in Discord, and when the handshake fails.
+  const [lanParty, setLanParty] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [socketId, setSocketId] = useState(null);
   const [spotifyToken, setSpotifyToken] = useState(null);
@@ -386,6 +399,22 @@ export default function App() {
       const urlRoomCode = isWebMode ? getRoomCodeFromUrl() : null;
       let channelId = urlRoomCode ? `lt:${urlRoomCode}` : `solo:${sessionId}`;
 
+      // LAN Party: the host page vouches for the listener's name and hands over an
+      // opaque id for the voice channel, so there is no login step and everyone in
+      // the channel resolves to the same room. Opened on its own (no channel) it is a
+      // private solo session like any other visit. A null answer — no listed host
+      // replied within a few seconds — leaves everything above as it was: the
+      // ordinary website, just inside a frame.
+      const lanPartySession = isLanPartyCandidate ? await connectLanParty() : null;
+      if (lanPartySession) {
+        // Prefixed so a LAN Party name can never collide with a Discord snowflake or
+        // a web visitor's dev-… id when DJ ownership is compared.
+        userData = { id: `lp:${lanPartySession.username}`, username: lanPartySession.displayName };
+        channelId = lanPartySession.roomId
+          ? `lanparty:${lanPartySession.roomId}`
+          : `solo:${sessionId}`;
+      }
+
       if (discordSdk) {
         // The voice-channel id comes from the activity launch URL (?channel_id=) and is
         // available on the SDK immediately — independent of the auth handshake. Pin the
@@ -440,6 +469,12 @@ export default function App() {
         }
       }
 
+      if (lanPartySession) {
+        setLanParty(true);
+        // The room is the voice channel (or a private one); a /room/CODE in the
+        // address LAN Party was given does not apply here.
+        setRoomCode(null);
+      }
       setUser(userData);
       setDefaultChannelId(channelId);
       setReady(true);
@@ -1127,7 +1162,10 @@ export default function App() {
               Claim DJ
             </button>
           )}
-          {isWebMode ? (
+          {/* Inside LAN Party the room is the voice channel: there is no link to
+              share and navigating to /room/CODE would drop out of the channel, so it
+              gets the in-place controls Discord has instead of Listen Together. */}
+          {isWebMode && !lanParty ? (
             <ListenTogether
               roomCode={roomCode}
               serverUrl={resolvedServerUrl}
@@ -1181,8 +1219,9 @@ export default function App() {
         <UpdateNotice phase={updatePhase} inParty={!!roomCode || !!discordPartyCode} />
 
         {/* Install prompt: mobile browsers only. The Discord activity and the
-            packaged app both suppress it (see InstallAppBanner). */}
-        {isWebMode && isMobileLayout && <InstallAppBanner />}
+            packaged app both suppress it (see InstallAppBanner), and inside LAN
+            Party there is nothing to install — the listener is already in an app. */}
+        {isWebMode && !lanParty && isMobileLayout && <InstallAppBanner />}
 
         <div className="service-row">
           <ServiceSelector
@@ -1191,7 +1230,7 @@ export default function App() {
             isDJ={isDJ}
             detached={detached}
           />
-          {isWebMode && (
+          {isWebMode && !lanParty && (
             <a
               className="add-to-discord-btn"
               href="https://discord.com/oauth2/authorize?client_id=1492382387139772476"

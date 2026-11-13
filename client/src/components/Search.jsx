@@ -26,6 +26,12 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   const [showNewPlaylistInput, setShowNewPlaylistInput] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [pendingNewPlaylistTrack, setPendingNewPlaylistTrack] = useState(null);
+  // Two-step "Clear History", like the queue's Clear: the first click arms the button,
+  // a second click within a few seconds confirms. window.confirm() is not an option —
+  // inside LAN Party's sandboxed frame (no allow-modals) it returns false without
+  // showing anything, so the button silently did nothing there.
+  const [clearHistoryArmed, setClearHistoryArmed] = useState(false);
+  const clearHistoryTimerRef = useRef(null);
   const queuedIds = useMemo(() => new Set((queue || []).map((track) => track.id)), [queue]);
   // The server already prunes to its retention window; this second filter only
   // hides anything that slipped through. It has to use the SAME window the server
@@ -71,6 +77,8 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   }, [playlistDropdown, contextMenu]);
 
   useEffect(() => subscribePlaylists(setPlaylists), []);
+
+  useEffect(() => () => clearTimeout(clearHistoryTimerRef.current), []);
 
   useEffect(() => {
     const onResize = () => setIsMobileLayout(window.innerWidth <= 600);
@@ -446,8 +454,14 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   }
 
   function handleClearHistory() {
-    const confirmed = window.confirm('Clear deleted-song history for everyone in this room?');
-    if (!confirmed) return;
+    clearTimeout(clearHistoryTimerRef.current);
+    if (!clearHistoryArmed) {
+      setClearHistoryArmed(true);
+      clearHistoryTimerRef.current = setTimeout(() => setClearHistoryArmed(false), 3000);
+      return;
+    }
+    clearHistoryTimerRef.current = null;
+    setClearHistoryArmed(false);
     onClearHistory?.();
     closeContextMenu();
   }
@@ -709,8 +723,15 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
         <>
         {canManageHistory && (
           <div className="history-toolbar">
-            <button type="button" className="btn-history-clear" onClick={handleClearHistory}>
-              Clear History
+            <button
+              type="button"
+              className={`btn-history-clear${clearHistoryArmed ? ' armed' : ''}`}
+              onClick={handleClearHistory}
+              title={clearHistoryArmed
+                ? 'Click again to clear deleted-song history for everyone in this room'
+                : 'Clears deleted-song history for everyone in this room (click twice)'}
+            >
+              {clearHistoryArmed ? 'Confirm: clear for everyone' : 'Clear History'}
             </button>
           </div>
         )}

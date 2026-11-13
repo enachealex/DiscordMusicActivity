@@ -505,6 +505,10 @@ body {
 .btn-history-clear:hover {
   background: rgba(237, 66, 69, 0.18);
 }
+.btn-history-clear.armed {
+  color: #fff;
+  background: rgba(237, 66, 69, 0.32);
+}
 .history-repeat-badge {
   display: inline-block;
   margin-left: 6px;

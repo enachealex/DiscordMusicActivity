@@ -160,9 +160,32 @@ const pendingClaims = new Map();
 
 // Ephemeral rooms (web "solo" sessions and "Listen Together" rooms) are kept only in
 // memory: they skip disk persistence and are deleted when the last socket leaves. Discord
-// voice-channel rooms use numeric snowflake keys and stay persistent as before.
+// voice-channel rooms use numeric snowflake keys and stay persistent as before. So do LAN
+// Party voice-channel rooms ("lanparty:<id>"): the queue belongs to the channel, not to
+// whoever happens to be in it, and is still there after everyone has left.
 function isEphemeralRoom(channelId) {
   return channelId.startsWith('solo:') || channelId.startsWith('lt:');
+}
+
+// The room key comes straight from the browser, and for a persistent room it becomes a
+// file name under playlists/. So a persistent key has to be one of the shapes a real
+// client sends — anything else (a path, a made-up namespace) is refused at connect
+// rather than read from or written to disk:
+//   discord:<channel id>   the Discord activity (a snowflake; older builds could send
+//                          the launch's instance id, hence letters and dashes)
+//   <snowflake>            the bare channel id the earliest Discord builds sent
+//   lanparty:<32 hex>      a LAN Party voice channel. The id is an HMAC LAN Party
+//                          computes per app and channel, and knowing it is the only way
+//                          into the room — it is held to that exact shape so nobody can
+//                          mint a persistent room under this prefix with a key of their
+//                          own choosing.
+// Ephemeral keys never touch the disk and are left as free-form as they always were.
+const PERSISTENT_ROOM_KEY = /^(?:discord:[A-Za-z0-9_-]{1,64}|[0-9]{1,32}|lanparty:[0-9a-f]{32})$/;
+
+function isAcceptableRoomKey(channelId) {
+  // A repeated query parameter arrives as an array, not a string.
+  if (typeof channelId !== 'string') return false;
+  return isEphemeralRoom(channelId) || PERSISTENT_ROOM_KEY.test(channelId);
 }
 
 function warmUpcomingTracks(room) {
@@ -273,7 +296,7 @@ async function getRoom(channelId) {
 io.on('connection', async (socket) => {
   const { channelId, userId, username } = socket.handshake.query;
 
-  if (!channelId || !userId) {
+  if (!channelId || !userId || !isAcceptableRoomKey(channelId)) {
     socket.disconnect(true);
     return;
   }
