@@ -153,8 +153,12 @@ function ownOrigins(req) {
 
 // Inside Discord the page runs at https://<application id>.discordsays.com, Discord's
 // proxy in front of this server, so that is the page origin a Discord sign-in names.
+// The last fallback is the same public application id the client ships with
+// (client/src/App.jsx): production's .env sets neither variable, and without it a
+// sign-in started inside Discord would be refused as coming from an unknown page.
+const BUILT_IN_DISCORD_APP_ID = '1492382387139772476';
 function discordProxyOrigin() {
-  const id = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+  const id = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID || BUILT_IN_DISCORD_APP_ID;
   return id && /^[0-9]{5,32}$/.test(id) ? `https://${id}.discordsays.com` : null;
 }
 
