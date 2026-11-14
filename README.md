@@ -41,12 +41,18 @@ If this endpoint is unreachable, start the server (`npm run dev --prefix server`
 
 ## Spotify sign-in
 
-`/spotify/login` (the link the app shows) and `/spotify/login-url` start a sign-in. The
-OAuth `state` is a random single-use nonce; everything else about the sign-in is kept on
-the server for 10 minutes. `/spotify/login` also binds the sign-in to the browser that
-opened it with a cookie, so `/callback` must be reached in that same browser. The tokens
-reach the app over its Socket.IO connection (and by `postMessage` to the opening page,
-when there is one).
+`/spotify/login` (the link the app shows) starts a sign-in, and must name the app's live
+Socket.IO connection. The OAuth `state` is a random single-use nonce; everything else
+about the sign-in is kept on the server for 10 minutes. The sign-in is also bound with a
+cookie to the browser that opened the link, so `/callback` must be reached in that same
+browser.
+
+Finishing at Spotify does not sign the app in by itself. `/callback` keeps the tokens on
+the server and shows a 6-digit code; the app that started the sign-in asks for that code
+and sends it over its socket (`spotify-auth:confirm`), and only then are the tokens sent
+to it — so a sign-in link passed to someone else gets nothing unless they also hand over
+the code from their own screen. The code lasts 5 minutes and allows 5 wrong tries, and
+the held tokens are dropped if the app disconnects; after any of those, start again.
 
 The `origin` (used for Spotify's redirect URI) and `client_origin` (the app page) a
 sign-in names must be one of: an origin in `CLIENT_URL` (comma-separated list allowed),

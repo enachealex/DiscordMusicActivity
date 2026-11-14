@@ -10,12 +10,24 @@ function thumbSrc(url) {
   return url;
 }
 
-export default function Search({ service, spotifyToken, spotifyRestoring, queue, deletedHistory, historyRetentionDays = 30, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyLogout, isDJ, canManageHistory, onClearHistory }) {
+export default function Search({ service, spotifyToken, spotifyRestoring, queue, deletedHistory, historyRetentionDays = 30, onAdd, onPlayTrack, onLoadPlaylist, onSpotifyLogin, onSpotifyConfirm, onSpotifyLogout, isDJ, canManageHistory, onClearHistory }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
+  // Second step of the Spotify sign-in: the page Spotify returns to shows a 6-digit
+  // code, and it is typed here. Asked for in the page itself rather than a dialog —
+  // window.prompt() does nothing in LAN Party's sandboxed frame.
+  const [spotifyCodeStep, setSpotifyCodeStep] = useState(false);
+  const [spotifyCode, setSpotifyCode] = useState('');
+  const [spotifyCodeError, setSpotifyCodeError] = useState('');
+  const [spotifyCodeBusy, setSpotifyCodeBusy] = useState(false);
+  // The sign-in link as it was when the listener went for it. The link names this
+  // connection, so a different one now means Music DJ reconnected and the server has
+  // dropped the sign-in that code belonged to.
+  const [spotifyCodeLink, setSpotifyCodeLink] = useState('');
+  const spotifySignInDropped = spotifyCodeStep && !!spotifyCodeLink && onSpotifyLogin !== spotifyCodeLink;
   const [activeTab, setActiveTab] = useState('songs');
   const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth <= 600);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
@@ -127,8 +139,49 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
   }, [playlistDropdown]);
 
 
+  // Called from every way of taking the sign-in link (click, middle-click, the
+  // right-click menu, Copy, selecting it), since any of them can end with a code.
+  function beginSpotifyCodeStep() {
+    // A code typed for a sign-in the server has since dropped is of no use.
+    if (spotifySignInDropped) setSpotifyCode('');
+    setSpotifyCodeStep(true);
+    setSpotifyCodeLink(onSpotifyLogin);
+    setSpotifyCodeError('');
+  }
+
+  function resetSpotifyCodeStep() {
+    setSpotifyCodeStep(false);
+    setSpotifyCode('');
+    setSpotifyCodeError('');
+  }
+
+  async function submitSpotifyCode(e) {
+    e.preventDefault();
+    if (spotifyCodeBusy) return;
+    if (spotifyCode.length !== 6) {
+      setSpotifyCodeError('Enter all 6 digits of the code.');
+      return;
+    }
+    setSpotifyCodeBusy(true);
+    setSpotifyCodeError('');
+    const result = (await onSpotifyConfirm?.(spotifyCode)) || { ok: false };
+    setSpotifyCodeBusy(false);
+    if (result.ok) {
+      // The tokens follow over the socket and replace this whole prompt.
+      resetSpotifyCodeStep();
+      return;
+    }
+    setSpotifyCodeError(result.message || 'Could not confirm the code. Try again.');
+    // These end the sign-in on the server; only a new one, from the link, can work.
+    if (result.reason === 'none' || result.reason === 'expired' || result.reason === 'too-many-attempts') {
+      setSpotifyCodeStep(false);
+      setSpotifyCode('');
+    }
+  }
+
   async function handleCopyLoginUrl() {
     if (!onSpotifyLogin) return;
+    beginSpotifyCodeStep();
 
     try {
       if (navigator.clipboard?.writeText) {
@@ -186,6 +239,9 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
               rel="noopener noreferrer"
               className="btn-spotify"
               style={{ display: 'inline-block', textAlign: 'center', textDecoration: 'none' }}
+              onClick={beginSpotifyCodeStep}
+              onAuxClick={beginSpotifyCodeStep}
+              onContextMenu={beginSpotifyCodeStep}
             >
               Click Here to Sign In
             </a>
@@ -201,7 +257,10 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                   border: '1px solid var(--border)', background: 'rgba(0, 0, 0, 0.5)', 
                   color: 'white', outline: 'none' 
                 }}
-                onClick={(e) => e.target.select()}
+                onClick={(e) => {
+                  e.target.select();
+                  beginSpotifyCodeStep();
+                }}
               />
               <button
                 style={{ 
@@ -216,6 +275,42 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
             </div>
             {copyStatus ? (
               <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-sub)' }}>{copyStatus}</p>
+            ) : null}
+            {spotifyCodeStep && !spotifySignInDropped ? (
+              <form className="spotify-code-step" onSubmit={submitSpotifyCode}>
+                <label className="spotify-code-label" htmlFor="spotify-code-input">
+                  Enter the 6-digit code shown on the Spotify page
+                </label>
+                <div className="spotify-code-row">
+                  <input
+                    id="spotify-code-input"
+                    className="spotify-code-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    autoComplete="off"
+                    value={spotifyCode}
+                    onChange={(e) => {
+                      setSpotifyCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                      setSpotifyCodeError('');
+                    }}
+                  />
+                  <button type="submit" className="btn-spotify" disabled={spotifyCodeBusy}>
+                    {spotifyCodeBusy ? 'Checking…' : 'Confirm'}
+                  </button>
+                </div>
+                <button type="button" className="spotify-code-restart" onClick={resetSpotifyCodeStep}>
+                  Start over
+                </button>
+              </form>
+            ) : null}
+            {spotifySignInDropped ? (
+              <p className="spotify-code-error" role="alert">
+                Music DJ reconnected, so the sign-in you started was dropped. Use the link above to start again.
+              </p>
+            ) : spotifyCodeError ? (
+              <p className="spotify-code-error" role="alert">{spotifyCodeError}</p>
             ) : null}
           </div>
         ) : (

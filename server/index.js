@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs/promises';
-import { spotifyRouter, handleSpotifyCallback } from './spotify.js';
+import { spotifyRouter, handleSpotifyCallback, attachSpotifySignIn } from './spotify.js';
 import { youtubeRouter, warmYoutubeQueueAhead } from './youtube.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -300,6 +300,10 @@ io.on('connection', async (socket) => {
     socket.disconnect(true);
     return;
   }
+
+  // Before the await below: a handler attached after it would miss a disconnect (or a
+  // sign-in code) that arrived while the room was loading.
+  attachSpotifySignIn(socket);
 
   socket.join(channelId);
   const room = await getRoom(channelId);

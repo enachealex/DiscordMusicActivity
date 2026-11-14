@@ -152,6 +152,9 @@ export default function App() {
     const serverOrigin = new URL(resolvedServerUrl).origin;
     const clientOrigin = window.location.origin;
     const effectiveSocketId = socketId || socketRef.current?.id || '';
+    // The server refuses a sign-in that names no live socket: the tokens come back
+    // over it and it is the one that confirms the code. No link until there is one.
+    if (!effectiveSocketId) return '';
     return `${serverOrigin}/spotify/login?userId=${encodeURIComponent(user.id || '')}&socketId=${encodeURIComponent(effectiveSocketId)}&origin=${encodeURIComponent(serverOrigin)}&client_origin=${encodeURIComponent(clientOrigin)}`;
   }, [ready, user, socketId, resolvedServerUrl]);
 
@@ -211,70 +214,53 @@ export default function App() {
     };
   }
 
-  // Listen for tokens posted from the Spotify OAuth popup
-  useEffect(() => {
-    function handleMessage(e) {
-      const serverOrigin = new URL(resolvedServerUrl).origin;
-      if (e.origin !== window.location.origin && e.origin !== serverOrigin) return;
-      if (e.data?.type !== 'spotify-auth') return;
-      const { access_token, refresh_token, expires_in } = e.data;
-      localStorage.setItem('spotify_refresh_token', refresh_token);
-      setSpotifyToken({
-        access_token,
-        refresh_token,
-        expires_at: Date.now() + parseInt(expires_in || '3600') * 1000,
-      });
-      setSpotifyRestoring(false);
-    }
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [resolvedServerUrl]);
-
-  // Pick up Spotify tokens after OAuth redirect, or silently restore from localStorage
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const at = params.get('access_token');
-    if (at) {
-      const rt = params.get('refresh_token');
-      const expiresIn = parseInt(params.get('expires_in') || '3600');
-      localStorage.setItem('spotify_refresh_token', rt);
-      setSpotifyToken({
-        access_token: at,
-        refresh_token: rt,
-        expires_at: Date.now() + expiresIn * 1000,
-      });
-      setSpotifyRestoring(false);
-      // Strip the OAuth query params but keep a /room/CODE path intact so a
-      // Listen Together session survives the Spotify login round-trip.
-      const cleanPath = getRoomCodeFromUrl() ? window.location.pathname : '/';
-      window.history.replaceState({}, '', cleanPath);
-    } else {
-      // No fresh OAuth — try to silently restore a previous session
-      const storedRt = localStorage.getItem('spotify_refresh_token');
-      if (storedRt) {
-        fetch('/api/spotify/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: storedRt }),
-        })
-          .then((r) => (r.ok ? r.json() : Promise.reject()))
-          .then((data) => {
-            const rt = data.refresh_token || storedRt;
-            localStorage.setItem('spotify_refresh_token', rt);
-            setSpotifyToken({
-              access_token: data.access_token,
-              refresh_token: rt,
-              expires_at: Date.now() + data.expires_in * 1000,
-            });
-          })
-          .catch(() => {
-            // Refresh token revoked or network error — clear so user sees connect prompt
-            localStorage.removeItem('spotify_refresh_token');
-          })
-          .finally(() => setSpotifyRestoring(false));
-      } else {
-        setSpotifyRestoring(false);
+  // Second half of the Spotify sign-in. The page Spotify returns to shows a code and
+  // the server holds the tokens until this socket — the one named in the sign-in
+  // link — sends that code back; they then arrive as 'spotify-auth' below. Resolves
+  // with the server's { ok, message }, which the connect prompt shows as it is.
+  function confirmSpotifyCode(code) {
+    return new Promise((resolve) => {
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        resolve({ ok: false, message: 'Music DJ is not connected right now. Wait a moment and try again.' });
+        return;
       }
+      socket.timeout(8000).emit('spotify-auth:confirm', { code }, (err, result) => {
+        resolve(err || !result
+          ? { ok: false, message: 'No answer from Music DJ. Check your connection and try again.' }
+          : result);
+      });
+    });
+  }
+
+  // Silently restore a previous Spotify session from the stored refresh token. Tokens are never
+  // read from the page URL: sign-in finishes over the socket after the confirmation code, and a
+  // link carrying ?access_token=... would otherwise sign a visitor into whoever made the link.
+  useEffect(() => {
+    const storedRt = localStorage.getItem('spotify_refresh_token');
+    if (storedRt) {
+      fetch('/api/spotify/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: storedRt }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((data) => {
+          const rt = data.refresh_token || storedRt;
+          localStorage.setItem('spotify_refresh_token', rt);
+          setSpotifyToken({
+            access_token: data.access_token,
+            refresh_token: rt,
+            expires_at: Date.now() + data.expires_in * 1000,
+          });
+        })
+        .catch(() => {
+          // Refresh token revoked or network error — clear so user sees connect prompt
+          localStorage.removeItem('spotify_refresh_token');
+        })
+        .finally(() => setSpotifyRestoring(false));
+    } else {
+      setSpotifyRestoring(false);
     }
   }, []);
 
@@ -1411,6 +1397,7 @@ export default function App() {
           onLoadPlaylist={loadPlaylist}
           onClearHistory={clearHistory}
           onSpotifyLogin={spotifyLoginUrl}
+          onSpotifyConfirm={confirmSpotifyCode}
           onSpotifyLogout={() => {
             localStorage.removeItem('spotify_refresh_token');
             setSpotifyToken(null);

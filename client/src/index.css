@@ -1544,6 +1544,47 @@ body {
 }
 .btn-spotify:hover { background: #1aa34a; }
 
+/* ── Spotify sign-in code step ───── */
+.spotify-code-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 400px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.spotify-code-label { font-size: 12px; font-weight: 600; color: var(--text); }
+.spotify-code-row { display: flex; justify-content: center; gap: 8px; width: 100%; }
+.spotify-code-input {
+  /* Shrinks before the button does, so the row holds on the narrowest panels. */
+  flex: 0 1 150px;
+  min-width: 0;
+  padding: 8px 10px;
+  /* Not below 16px: iOS zooms the page when a smaller field takes focus. */
+  font-size: 18px;
+  letter-spacing: 4px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+}
+.spotify-code-row .btn-spotify { flex: 0 0 auto; }
+.spotify-code-row .btn-spotify:disabled { opacity: 0.6; cursor: default; }
+.spotify-code-error { max-width: 400px; margin: 0; font-size: 12px; line-height: 1.4; color: var(--danger); }
+.spotify-code-restart {
+  padding: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ── Session status bar ──────────── */
 .search-session-bar { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-bottom: 6px; }
 .session-badge { font-size: 11px; color: var(--text-muted); }
