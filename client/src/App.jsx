@@ -496,8 +496,12 @@ export default function App() {
     // The server announces a restart before a deploy takes it down. Save
     // immediately — the room is about to be gone — and tell the listener what is
     // happening rather than letting the music stop for no visible reason.
+    // Only a solo session's queue is the listener's own to remember: a shared room
+    // (a Discord activity, a LAN Party voice room) belongs to everyone in it, and
+    // saving it here would replace their private remembered queue with the party's.
     socket.on('server:updating', () => {
       setUpdatePhase('updating');
+      if (!isSoloWebSession) return;
       setRoom((prev) => {
         if (prev?.queue?.length) {
           saveRememberedQueue({
