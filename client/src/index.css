@@ -54,6 +54,61 @@ body {
   body.web-mode .app-left { width: 500px; }
 }
 
+/* ── LAN Party mode ───────────────────
+   html.lanparty is set by lanParty.js once a LAN Party host has answered the
+   handshake, and never anywhere else, so Discord, the website and the Android
+   shell keep the rules above untouched. Inside LAN Party the frame IS the window
+   (an overlay, an in-call panel, a phone), so the app fills it edge to edge
+   instead of sitting in the middle as the fixed-size Discord panel, and LAN
+   Party's own chrome takes the place of the border.
+   These selectors match `body.web-mode …` above in specificity (LAN Party is
+   web mode too) and come after it, which is what lets them win. */
+html.lanparty .app {
+  max-width: none;
+  border: none;
+  border-radius: 0;
+}
+/* Desktop widths only: at 600px and below the stacked, scrolling phone layout
+   further down already fills the frame and must keep its auto height. */
+@media (min-width: 601px) {
+  /* No centring: the app is the whole frame. */
+  html.lanparty body { display: block; }
+  /* A frame shorter than the app's minimum scrolls instead of crushing the
+     queue to nothing. */
+  html.lanparty #root { max-width: none; height: 100%; overflow-y: auto; }
+  /* Roughly what the player column needs to show its controls plus a few queue
+     rows; below that the whole app scrolls inside the frame (see #root). */
+  html.lanparty .app { height: 100%; min-height: 440px; }
+  /* Both columns stretch to the row instead of taking 100% of it, so they
+     follow the min-height above when it applies. */
+  html.lanparty .app-left,
+  html.lanparty .app-right { height: auto; }
+  /* The player column grows with the frame but stays a column; the search side
+     takes the rest. It gives way down to 360px before the search column drops
+     below its 220px minimum on a narrow (~600px) in-call panel. */
+  html.lanparty .app-left {
+    width: clamp(400px, 40%, 560px);
+    flex-shrink: 1;
+    min-width: 360px;
+  }
+  /* Spotify sign-in in a short frame: the prompt is centred in a column that
+     clips, so anything taller than the column (the code step plus an error)
+     lost its top and bottom with no way to reach them. Scroll instead; the auto
+     margins keep it centred whenever it does fit. */
+  html.lanparty .app-right .spotify-connect-prompt {
+    overflow-y: auto;
+    justify-content: flex-start;
+  }
+  html.lanparty .app-right .spotify-connect-prompt > :first-child { margin-top: auto; }
+  html.lanparty .app-right .spotify-connect-prompt > :last-child { margin-bottom: auto; }
+}
+@media (min-width: 601px) and (max-height: 560px) {
+  html.lanparty .app-right .spotify-connect-prompt {
+    padding: 14px 12px;
+    gap: 6px;
+  }
+}
+
 /* ── Left column (player) ───────────── */
 .app-left {
   width: 420px;

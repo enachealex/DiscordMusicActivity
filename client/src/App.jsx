@@ -1148,10 +1148,14 @@ export default function App() {
               Claim DJ
             </button>
           )}
-          {/* Inside LAN Party the room is the voice channel: there is no link to
-              share and navigating to /room/CODE would drop out of the channel, so it
-              gets the in-place controls Discord has instead of Listen Together. */}
-          {isWebMode && !lanParty ? (
+          {/* Inside LAN Party the room is the voice channel, so none of the
+              room-switching controls apply: Listen Together has no link to share
+              (and /room/CODE would drop out of the channel), Join Party would move
+              this listener into a different room from everyone they are in the
+              channel with, and Detach exists for Discord's "play my own music while
+              sitting in the call" case. DJ and Claim DJ above stay: they are the
+              channel's. */}
+          {lanParty ? null : isWebMode ? (
             <ListenTogether
               roomCode={roomCode}
               serverUrl={resolvedServerUrl}
@@ -1202,7 +1206,11 @@ export default function App() {
           )}
         </header>
 
-        <UpdateNotice phase={updatePhase} inParty={!!roomCode || !!discordPartyCode} />
+        <UpdateNotice
+          phase={updatePhase}
+          inParty={!!roomCode || !!discordPartyCode}
+          inLanPartyChannel={lanParty && !!effectiveChannelId?.startsWith('lanparty:')}
+        />
 
         {/* Install prompt: mobile browsers only. The Discord activity and the
             packaged app both suppress it (see InstallAppBanner), and inside LAN
@@ -1297,7 +1305,12 @@ export default function App() {
           <EqSelector value={eqMode} onChange={setEqMode} />
         )}
 
-        {isSoloWebSession && (
+        {/* Only a private web session has a queue of its own to remember, so a LAN
+            Party voice channel never showed this. Hidden in LAN Party mode
+            altogether: the one case left is the app opened on its own in LAN
+            Party's viewer, where the switch is clutter. The memory itself still
+            works there, on by default, as on the website. */}
+        {isSoloWebSession && !lanParty && (
           <QueueMemory
             enabled={rememberQueue}
             onChange={handleRememberQueueChange}

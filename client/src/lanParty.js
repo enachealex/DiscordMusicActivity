@@ -88,10 +88,20 @@ export function connectLanParty() {
     const giveUp = new Promise((resolve) => {
       setTimeout(() => resolve(null), HANDSHAKE_TIMEOUT_MS + LOAD_ALLOWANCE_MS);
     });
-    attempt = Promise.race([handshake(), giveUp]).catch((err) => {
-      console.warn('LAN Party bridge unavailable:', err?.message || err);
-      return null;
-    });
+    attempt = Promise.race([handshake(), giveUp])
+      .catch((err) => {
+        console.warn('LAN Party bridge unavailable:', err?.message || err);
+        return null;
+      })
+      .then((session) => {
+        // The layout keys off this class (index.css, "LAN Party mode"): inside LAN Party
+        // the app fills whatever frame it is given instead of sitting in the middle of
+        // it as the fixed-size Discord panel. Set only once the handshake has succeeded,
+        // like everything else LAN Party mode changes, and before App renders anything
+        // past its loading screen, so the layout never jumps.
+        if (session) document.documentElement.classList.add('lanparty');
+        return session;
+      });
   }
   return attempt;
 }

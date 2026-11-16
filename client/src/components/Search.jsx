@@ -253,7 +253,7 @@ export default function Search({ service, spotifyToken, spotifyRestoring, queue,
                 readOnly
                 value={onSpotifyLogin}
                 style={{ 
-                  flex: 1, padding: '4px 6px', fontSize: '10px', borderRadius: '4px', 
+                  flex: 1, minWidth: 0, padding: '4px 6px', fontSize: '10px', borderRadius: '4px',
                   border: '1px solid var(--border)', background: 'rgba(0, 0, 0, 0.5)', 
                   color: 'white', outline: 'none' 
                 }}

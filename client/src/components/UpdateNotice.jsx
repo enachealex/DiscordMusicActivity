@@ -5,12 +5,18 @@
 // queue is held in their own browser and comes back automatically, so the notice
 // says so and clears itself once the connection returns. A party is a different
 // story: the shared room lives only in the server's memory, so it genuinely does
-// not survive, and saying otherwise would be a lie.
-export default function UpdateNotice({ phase, inParty }) {
+// not survive, and saying otherwise would be a lie. A LAN Party voice channel is a
+// third case: the server keeps that queue on disk, so it does come back, but not
+// from anything stored on this device.
+export default function UpdateNotice({ phase, inParty, inLanPartyChannel }) {
   if (!phase) return null;
 
   const reconnected = phase === 'reconnected';
-  const message = reconnected
+  const message = inLanPartyChannel
+    ? reconnected
+      ? "Back online. The channel's queue is back."
+      : "Updating the app. The channel's queue is kept and comes back in a few seconds."
+    : reconnected
     ? inParty
       ? 'Back online. The party room was reset — start a new one to listen together again.'
       : 'Back online. Your queue has been restored.'
